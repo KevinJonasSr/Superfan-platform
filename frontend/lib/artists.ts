@@ -7,7 +7,16 @@ export type Artist = {
   accentFrom: string; // CSS color literal (e.g. "#f43f5e")
   accentTo: string; // CSS color literal (e.g. "#fbbf24")
   genres: string[];
-  upcoming: { title: string; detail: string; date: string }[];
+  upcoming: {
+    /** DB-backed event id. Optional for legacy hardcoded fallback entries. */
+    id?: string;
+    title: string;
+    detail: string;
+    date: string;
+    capacity?: number | null;
+    location?: string | null;
+    url?: string | null;
+  }[];
   merch: { title: string; tier: string; points: string }[];
   social: { label: string; href: string }[];
 };

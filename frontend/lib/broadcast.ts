@@ -16,23 +16,33 @@ export type BroadcastResult = {
 
 async function loadRecipients(opts: {
   artistSlug?: string | null;
+  eventId?: string | null;
   channel: "email" | "sms";
 }) {
   const admin = createAdminClient();
   const optColumn = opts.channel === "email" ? "email_opted_in" : "sms_opted_in";
   const contactColumn = opts.channel === "email" ? "email" : "phone";
 
-  // If an artist_slug is provided, restrict recipients to fans who follow
-  // that artist (via fan_artist_following). Otherwise every opted-in fan
-  // gets the blast (useful for platform-wide announcements).
-  let followerIds: string[] | null = null;
-  if (opts.artistSlug) {
-    const { data: follows } = await admin
+  // Audience precedence (most specific wins):
+  //   eventId  → fans who RSVPed to this event (for reminder blasts)
+  //   artist   → fans who follow that artist
+  //   (none)   → every opted-in fan (platform-wide announcement)
+  let scopedIds: string[] | null = null;
+
+  if (opts.eventId) {
+    const { data } = await admin
+      .from("event_rsvps")
+      .select("fan_id")
+      .eq("event_id", opts.eventId);
+    scopedIds = (data ?? []).map((r) => r.fan_id as string);
+    if (scopedIds.length === 0) return [];
+  } else if (opts.artistSlug) {
+    const { data } = await admin
       .from("fan_artist_following")
       .select("fan_id")
       .eq("artist_slug", opts.artistSlug);
-    followerIds = (follows ?? []).map((f) => f.fan_id as string);
-    if (followerIds.length === 0) return [];
+    scopedIds = (data ?? []).map((f) => f.fan_id as string);
+    if (scopedIds.length === 0) return [];
   }
 
   let query = admin
@@ -42,7 +52,7 @@ async function loadRecipients(opts: {
     .eq("suspended", false)
     .not(contactColumn, "is", null);
 
-  if (followerIds) query = query.in("id", followerIds);
+  if (scopedIds) query = query.in("id", scopedIds);
 
   const { data, error } = await query;
 
@@ -59,6 +69,7 @@ async function loadRecipients(opts: {
 export async function broadcastSms(params: {
   body: string;
   artistSlug?: string | null;
+  eventId?: string | null;
 }): Promise<BroadcastResult> {
   const result: BroadcastResult = { attempted: 0, sent: 0, failed: 0, recipients: 0 };
 
@@ -70,7 +81,11 @@ export async function broadcastSms(params: {
     return { ...result, error: "Twilio not configured" };
   }
 
-  const recipients = await loadRecipients({ artistSlug: params.artistSlug, channel: "sms" });
+  const recipients = await loadRecipients({
+    artistSlug: params.artistSlug,
+    eventId: params.eventId,
+    channel: "sms",
+  });
   result.recipients = recipients.length;
   if (recipients.length === 0) return result;
 

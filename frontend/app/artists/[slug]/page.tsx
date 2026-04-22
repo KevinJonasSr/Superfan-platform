@@ -6,8 +6,10 @@ import {
   doesFanFollowArtist,
   getArtistFromDb,
 } from "@/lib/data/artists";
+import { getRsvpMetaForEvents } from "@/lib/data/events";
 import { getCurrentFan } from "@/lib/data/fan";
 import FollowButton from "./follow-button";
+import RsvpButton from "./rsvp-button";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +45,12 @@ export default async function ArtistPage({
   if (!artist) notFound();
   const isSignedIn = fan !== null;
   const needsProfile = isSignedIn && !fan.first_name;
+
+  // RSVP meta: counts + whether the current fan has RSVPed to each event.
+  // Only events with a real DB id participate; fallback hardcoded events
+  // (no id) remain read-only.
+  const eventIds = artist.upcoming.filter((e) => !!e.id).map((e) => e.id as string);
+  const { counts: rsvpCounts, mine: myRsvps } = await getRsvpMetaForEvents(eventIds);
 
   const heroGradient = `linear-gradient(to bottom right, ${artist.accentFrom}66, #0f172a, #000000)`;
   const ctaGradient = `linear-gradient(to right, ${artist.accentFrom}, ${artist.accentTo})`;
@@ -137,13 +145,66 @@ export default async function ArtistPage({
       <section className="glass-card p-8">
         <p className="text-sm uppercase tracking-wide text-white/60">Upcoming</p>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          {artist.upcoming.map((e) => (
-            <div key={e.title} className="rounded-2xl bg-black/30 p-5">
-              <p className="text-sm font-semibold">{e.title}</p>
-              <p className="text-xs text-white/60">{e.detail}</p>
-              <p className="mt-3 text-xs uppercase tracking-wide text-white/40">{e.date}</p>
-            </div>
-          ))}
+          {artist.upcoming.map((e) => {
+            const eventId = e.id ?? null;
+            const count = eventId ? rsvpCounts.get(eventId) ?? 0 : 0;
+            const atCapacity =
+              e.capacity != null && e.capacity > 0 && count >= e.capacity;
+            const rsvped = eventId ? myRsvps.has(eventId) : false;
+            return (
+              <div
+                key={eventId ?? e.title}
+                className="rounded-2xl bg-black/30 p-5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">{e.title}</p>
+                    <p className="text-xs text-white/60">{e.detail}</p>
+                    {e.location && (
+                      <p className="mt-1 text-xs text-white/60">📍 {e.location}</p>
+                    )}
+                    <p className="mt-3 text-xs uppercase tracking-wide text-white/40">
+                      {e.date}
+                    </p>
+                    {eventId && (
+                      <p className="mt-1 text-[11px] text-white/50">
+                        {count}
+                        {e.capacity ? ` / ${e.capacity}` : ""} RSVPed
+                      </p>
+                    )}
+                  </div>
+                  {eventId && isSignedIn && (
+                    <RsvpButton
+                      eventId={eventId}
+                      artistSlug={artist.slug}
+                      initialRsvped={rsvped}
+                      atCapacity={atCapacity}
+                    />
+                  )}
+                </div>
+                {eventId && (
+                  <div className="mt-3 flex items-center gap-3 text-[11px]">
+                    <a
+                      href={`/api/events/${eventId}/ics`}
+                      className="text-white/60 hover:text-white"
+                    >
+                      📅 Add to calendar
+                    </a>
+                    {e.url && (
+                      <a
+                        href={e.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-white/60 hover:text-white"
+                      >
+                        Details ↗
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </section>
 

@@ -180,7 +180,47 @@ export async function createAndPublishCampaign(formData: FormData) {
     if (action) await recordItem("action", action.id as string, { kind: cta.kind });
   }
 
-  // 7) Email blast — create + send a Mailchimp regular campaign
+  // 7) Event (optional) — either create a new one or reference an existing id.
+  //    When an event is attached, the SMS blast below will target its RSVPers
+  //    (instead of all artist followers) if "target_event_rsvpers" is on.
+  let attachedEventId: string | null = null;
+  const eventTitle = String(formData.get("event_title") ?? "").trim();
+  const existingEventId = String(formData.get("existing_event_id") ?? "").trim();
+  if (eventTitle) {
+    const capacity = parseInt(String(formData.get("event_capacity") ?? ""), 10);
+    const startsAt = String(formData.get("event_starts_at") ?? "").trim();
+    const location = String(formData.get("event_location") ?? "").trim();
+    const dateText = String(formData.get("event_date_text") ?? "").trim();
+    const eventUrl = String(formData.get("event_url") ?? "").trim();
+    const detail = String(formData.get("event_detail") ?? "").trim();
+    const { data: ev } = await supa
+      .from("artist_events")
+      .insert({
+        artist_slug: artistSlug,
+        title: eventTitle,
+        detail: detail || null,
+        event_date: dateText || null,
+        starts_at: startsAt || null,
+        location: location || null,
+        url: eventUrl || null,
+        capacity: Number.isFinite(capacity) ? capacity : null,
+      })
+      .select("id")
+      .single();
+    if (ev) {
+      attachedEventId = ev.id as string;
+      await recordItem("event", attachedEventId, { title: eventTitle });
+    }
+  } else if (existingEventId) {
+    attachedEventId = existingEventId;
+    await recordItem("event", attachedEventId, { reused: true });
+  }
+
+  const targetEventRsvpers =
+    String(formData.get("target_event_rsvpers") ?? "false") === "true" &&
+    attachedEventId !== null;
+
+  // 8) Email blast — create + send a Mailchimp regular campaign
   const emailSubject = String(formData.get("email_subject") ?? "").trim();
   const emailBody = String(formData.get("email_body") ?? "").trim();
   if (emailSubject && emailBody) {
@@ -194,15 +234,21 @@ export async function createAndPublishCampaign(formData: FormData) {
     });
   }
 
-  // 8) SMS blast — iterate opted-in fans via Twilio (throttled)
+  // 9) SMS blast — iterate opted-in fans via Twilio (throttled).
+  //    Honors the per-event RSVP filter when attached.
   const smsBody = String(formData.get("sms_body") ?? "").trim();
   if (smsBody) {
-    const result = await broadcastSms({ body: smsBody, artistSlug });
+    const result = await broadcastSms({
+      body: smsBody,
+      artistSlug,
+      eventId: targetEventRsvpers ? attachedEventId : null,
+    });
     await recordItem("sms", null, {
       body: smsBody,
       sent: result.sent,
       failed: result.failed,
       recipients: result.recipients,
+      targeted_event_id: targetEventRsvpers ? attachedEventId : null,
       error: result.error ?? null,
     });
   }

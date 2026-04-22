@@ -55,6 +55,7 @@ function itemBadge(kind: string, count: number) {
     challenge: "bg-amber-500/20 text-amber-200",
     offer: "bg-emerald-500/20 text-emerald-200",
     action: "bg-purple-500/20 text-purple-200",
+    event: "bg-rose-500/20 text-rose-200",
     email: "bg-blue-500/20 text-blue-200",
     sms: "bg-green-500/20 text-green-200",
     badge: "bg-yellow-500/20 text-yellow-200",

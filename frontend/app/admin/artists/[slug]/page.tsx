@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { listEventsForAdmin } from "@/lib/data/artists";
+import { listRsvpsForEvent } from "@/lib/data/events";
 import ArtistEditForm from "./edit-form";
 import { createEventAction, deleteEventAction } from "../actions";
 
@@ -22,6 +23,9 @@ export default async function AdminArtistEditPage({
   if (!artist) notFound();
 
   const events = await listEventsForAdmin(slug);
+  const rsvpListsByEvent = await Promise.all(
+    events.map((e) => listRsvpsForEvent(e.id)),
+  );
 
   const social = (artist.social ?? []) as Array<{ label: string; href: string }>;
   const socialText = social.map((s) => `${s.label}|${s.href}`).join("\n");
@@ -71,27 +75,80 @@ export default async function AdminArtistEditPage({
         <p className="mt-1 text-xs text-white/60">
           Shown on the artist page. Set <span className="text-white/80">active = false</span> to hide without deleting.
         </p>
-        <div className="mt-3 space-y-2">
+        <div className="mt-3 space-y-3">
           {events.length === 0 && <p className="text-xs text-white/50">No events yet.</p>}
-          {events.map((e) => (
-            <div key={e.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-black/40 p-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold">
-                  {e.title}
-                  {!e.active && <span className="ml-2 rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase text-white/50">Inactive</span>}
-                </p>
-                <p className="text-xs text-white/60">
-                  {e.detail ?? "—"} · {e.event_date ?? "—"}
-                </p>
-                {e.url && <p className="mt-1 text-[10px] text-white/50 truncate">{e.url}</p>}
+          {events.map((e, i) => {
+            const rsvps = rsvpListsByEvent[i] ?? [];
+            const atCap =
+              e.capacity != null && e.capacity > 0 && rsvps.length >= e.capacity;
+            return (
+              <div key={e.id} className="rounded-2xl bg-black/40 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold">
+                      {e.title}
+                      {!e.active && (
+                        <span className="ml-2 rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase text-white/50">
+                          Inactive
+                        </span>
+                      )}
+                      {atCap && (
+                        <span className="ml-2 rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] uppercase text-rose-200">
+                          Full
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-xs text-white/60">
+                      {e.detail ?? "—"} · {e.event_date ?? "—"}
+                      {e.location ? ` · 📍 ${e.location}` : ""}
+                    </p>
+                    <p className="mt-1 text-[11px] text-white/50">
+                      {rsvps.length}
+                      {e.capacity ? ` / ${e.capacity}` : ""} RSVPed
+                    </p>
+                    {e.url && <p className="mt-1 text-[10px] text-white/50 truncate">{e.url}</p>}
+                  </div>
+                  <form action={deleteEventAction}>
+                    <input type="hidden" name="event_id" value={e.id} />
+                    <input type="hidden" name="artist_slug" value={slug} />
+                    <button className="text-xs text-rose-300/80 hover:text-rose-300">
+                      Delete
+                    </button>
+                  </form>
+                </div>
+                {rsvps.length > 0 && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-[11px] text-white/60 hover:text-white">
+                      View RSVPs ({rsvps.length})
+                    </summary>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {rsvps.map((r) => (
+                        <Link
+                          key={r.fan_id}
+                          href={`/admin/fans/${r.fan_id}`}
+                          className="inline-flex items-center gap-2 rounded-full bg-white/5 px-2 py-1 text-[11px] hover:bg-white/10"
+                        >
+                          {r.fan?.avatar_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={r.fan.avatar_url as string}
+                              alt=""
+                              className="h-4 w-4 rounded-full object-cover"
+                            />
+                          ) : (
+                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-br from-aurora to-ember text-[8px] font-bold">
+                              {(r.fan?.first_name?.[0] ?? "F").toUpperCase()}
+                            </span>
+                          )}
+                          <span>{r.fan?.first_name ?? "Anonymous"}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </details>
+                )}
               </div>
-              <form action={deleteEventAction}>
-                <input type="hidden" name="event_id" value={e.id} />
-                <input type="hidden" name="artist_slug" value={slug} />
-                <button className="text-xs text-rose-300/80 hover:text-rose-300">Delete</button>
-              </form>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <form action={createEventAction} className="mt-4 grid gap-2 md:grid-cols-2">
@@ -103,8 +160,19 @@ export default async function AdminArtistEditPage({
             className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
           />
           <input
+            name="starts_at"
+            type="datetime-local"
+            placeholder="Start date/time"
+            className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+          />
+          <input
             name="event_date"
-            placeholder="Date (free form, e.g. Mar 14, 2026)"
+            placeholder="Display date (Mar 14 · 7 PM)"
+            className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+          />
+          <input
+            name="location"
+            placeholder="Location (Nashville, TN)"
             className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
           />
           <input
@@ -115,6 +183,12 @@ export default async function AdminArtistEditPage({
           <input
             name="url"
             placeholder="URL (ticket link / livestream)"
+            className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+          />
+          <input
+            name="capacity"
+            type="number"
+            placeholder="Capacity (blank = unlimited)"
             className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
           />
           <input

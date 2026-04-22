@@ -62,6 +62,16 @@ export default function CampaignBuilder({ artists }: { artists: Artist[] }) {
 
   const [ctas, setCtas] = useState<CTA[]>([]);
 
+  const [includeEvent, setIncludeEvent] = useState(false);
+  const [eventTitle, setEventTitle] = useState("");
+  const [eventDetail, setEventDetail] = useState("");
+  const [eventDateText, setEventDateText] = useState("");
+  const [eventStartsAt, setEventStartsAt] = useState("");
+  const [eventLocation, setEventLocation] = useState("");
+  const [eventUrl, setEventUrl] = useState("");
+  const [eventCapacity, setEventCapacity] = useState("");
+  const [targetEventRsvpers, setTargetEventRsvpers] = useState(false);
+
   const [includeEmail, setIncludeEmail] = useState(false);
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
@@ -111,6 +121,12 @@ export default function CampaignBuilder({ artists }: { artists: Artist[] }) {
       if (!includeOffer) formData.set("offer_title", "");
       if (ctas.length > 0) {
         formData.set("ctas_json", JSON.stringify(ctas.filter((c) => c.title.trim())));
+      }
+      if (!includeEvent) {
+        formData.set("event_title", "");
+        formData.set("target_event_rsvpers", "false");
+      } else {
+        formData.set("target_event_rsvpers", String(targetEventRsvpers));
       }
       if (!includeEmail) {
         formData.set("email_subject", "");
@@ -392,6 +408,75 @@ export default function CampaignBuilder({ artists }: { artists: Artist[] }) {
           </div>
         )}
       </section>
+
+      {/* Event */}
+      <Section title="🎫 Event" include={includeEvent} onToggle={setIncludeEvent}>
+        <input
+          name="event_title"
+          value={eventTitle}
+          onChange={(e) => setEventTitle(e.target.value)}
+          placeholder="Event title (e.g. Nashville Listening Party)"
+          className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+        />
+        <div className="grid gap-2 md:grid-cols-2">
+          <input
+            name="event_starts_at"
+            type="datetime-local"
+            value={eventStartsAt}
+            onChange={(e) => setEventStartsAt(e.target.value)}
+            placeholder="Start date/time"
+            className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+          />
+          <input
+            name="event_date_text"
+            value={eventDateText}
+            onChange={(e) => setEventDateText(e.target.value)}
+            placeholder="Display date (e.g. Mar 14 · 7 PM)"
+            className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+          />
+          <input
+            name="event_location"
+            value={eventLocation}
+            onChange={(e) => setEventLocation(e.target.value)}
+            placeholder="Location (e.g. Nashville, TN)"
+            className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+          />
+          <input
+            name="event_capacity"
+            type="number"
+            value={eventCapacity}
+            onChange={(e) => setEventCapacity(e.target.value)}
+            placeholder="Capacity (blank = unlimited)"
+            className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+          />
+        </div>
+        <input
+          name="event_url"
+          value={eventUrl}
+          onChange={(e) => setEventUrl(e.target.value)}
+          placeholder="URL (ticket link, livestream, etc.)"
+          className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+        />
+        <textarea
+          name="event_detail"
+          value={eventDetail}
+          onChange={(e) => setEventDetail(e.target.value)}
+          rows={2}
+          placeholder="Detail shown on the event card"
+          className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+        />
+        <label className="flex items-center gap-2 text-xs text-white/70">
+          <input
+            type="checkbox"
+            name="target_event_rsvpers"
+            value="true"
+            checked={targetEventRsvpers}
+            onChange={(e) => setTargetEventRsvpers(e.target.checked)}
+            className="h-4 w-4 accent-aurora"
+          />
+          Target SMS blast at event RSVPers (instead of all artist followers)
+        </label>
+      </Section>
 
       {/* Email */}
       <Section title="✉️ Email blast" include={includeEmail} onToggle={setIncludeEmail}>

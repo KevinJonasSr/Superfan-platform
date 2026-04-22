@@ -86,7 +86,11 @@ export async function createEventAction(formData: FormData) {
   if (!artistSlug || !title) return;
   const detail = String(formData.get("detail") ?? "").trim();
   const eventDate = String(formData.get("event_date") ?? "").trim();
+  const startsAt = String(formData.get("starts_at") ?? "").trim();
+  const location = String(formData.get("location") ?? "").trim();
   const url = String(formData.get("url") ?? "").trim();
+  const capacityRaw = String(formData.get("capacity") ?? "").trim();
+  const capacity = capacityRaw ? parseInt(capacityRaw, 10) : null;
   const sortOrder = parseInt(String(formData.get("sort_order") ?? "0"), 10) || 0;
 
   const supa = createAdminClient();
@@ -95,7 +99,10 @@ export async function createEventAction(formData: FormData) {
     title,
     detail: detail || null,
     event_date: eventDate || null,
+    starts_at: startsAt || null,
+    location: location || null,
     url: url || null,
+    capacity: Number.isFinite(capacity) ? capacity : null,
     sort_order: sortOrder,
   });
   revalidatePath(`/admin/artists/${artistSlug}`);

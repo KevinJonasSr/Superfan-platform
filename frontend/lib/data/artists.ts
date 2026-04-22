@@ -11,6 +11,11 @@ export interface ArtistEvent {
   detail: string | null;
   event_date: string | null;
   url: string | null;
+  location: string | null;
+  image_url: string | null;
+  capacity: number | null;
+  starts_at: string | null;
+  ends_at: string | null;
   sort_order: number;
   active: boolean;
 }
@@ -47,9 +52,13 @@ function rowToArtist(row: ArtistRow, events: ArtistEvent[]): Artist {
       .filter((e) => e.active)
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((e) => ({
+        id: e.id,
         title: e.title,
         detail: e.detail ?? "",
         date: e.event_date ?? "",
+        capacity: e.capacity ?? null,
+        location: e.location ?? null,
+        url: e.url ?? null,
       })),
     merch: fallback?.merch ?? [],
   };
@@ -74,7 +83,7 @@ export async function getArtistFromDb(slug: string): Promise<Artist | null> {
         .maybeSingle(),
       supabase
         .from("artist_events")
-        .select("id, artist_slug, title, detail, event_date, url, sort_order, active")
+        .select("id, artist_slug, title, detail, event_date, url, location, image_url, capacity, starts_at, ends_at, sort_order, active")
         .eq("artist_slug", normalized)
         .eq("active", true)
         .order("sort_order"),
@@ -105,7 +114,7 @@ export async function listArtistsFromDb(): Promise<Artist[]> {
     const slugs = artists.map((a) => a.slug as string);
     const { data: events } = await supabase
       .from("artist_events")
-      .select("id, artist_slug, title, detail, event_date, url, sort_order, active")
+      .select("id, artist_slug, title, detail, event_date, url, location, image_url, capacity, starts_at, ends_at, sort_order, active")
       .in("artist_slug", slugs)
       .eq("active", true)
       .order("sort_order");
@@ -163,7 +172,7 @@ export async function listEventsForAdmin(slug: string): Promise<ArtistEvent[]> {
   const admin = createAdminClient();
   const { data } = await admin
     .from("artist_events")
-    .select("id, artist_slug, title, detail, event_date, url, sort_order, active")
+    .select("id, artist_slug, title, detail, event_date, url, location, image_url, capacity, starts_at, ends_at, sort_order, active")
     .eq("artist_slug", slug)
     .order("sort_order");
   return (data ?? []) as ArtistEvent[];
