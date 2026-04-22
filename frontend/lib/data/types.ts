@@ -119,3 +119,27 @@ export interface CommunityComment {
   body: string;
   created_at: string;
 }
+
+export interface PollOption {
+  id: string;
+  post_id: string;
+  label: string;
+  sort_order: number;
+  vote_count: number;
+}
+
+export interface PollData {
+  options: PollOption[];
+  total_votes: number;
+  my_option_id: string | null; // null if the current fan hasn't voted yet
+}
+
+export interface ChallengeEntry {
+  id: string;
+  post_id: string;
+  fan_id: string;
+  fan_first_name: string | null;
+  body: string | null;
+  image_url: string | null;
+  created_at: string;
+}

@@ -4,7 +4,12 @@ import type { Metadata } from "next";
 import { getArtist, listArtists } from "@/lib/artists";
 import { getAdminUser } from "@/lib/admin";
 import { getCurrentFan } from "@/lib/data/fan";
-import { getCommentsByPost, getPostsByArtist } from "@/lib/data/community";
+import {
+  getChallengeEntries,
+  getCommentsByPost,
+  getPollData,
+  getPostsByArtist,
+} from "@/lib/data/community";
 import NewPostForm from "./new-post-form";
 import PostCard from "./post-card";
 
@@ -38,12 +43,20 @@ export default async function ArtistCommunityPage({
     getAdminUser(),
   ]);
 
-  // Parallel-fetch comments for every visible post so the feed renders in
-  // one round-trip. Fine at MVP scale; when post counts per page get big
-  // we'll switch to on-expand fetching.
-  const commentsByPost = await Promise.all(
-    posts.map((p) => getCommentsByPost(p.id)),
-  );
+  // Parallel-fetch comments + poll data + challenge entries for every visible
+  // post so the feed renders in one round-trip. Fine at MVP scale; when post
+  // counts per page get big we'll switch to on-expand fetching.
+  const [commentsByPost, pollByPost, entriesByPost] = await Promise.all([
+    Promise.all(posts.map((p) => getCommentsByPost(p.id))),
+    Promise.all(
+      posts.map((p) => (p.kind === "poll" ? getPollData(p.id) : Promise.resolve(null))),
+    ),
+    Promise.all(
+      posts.map((p) =>
+        p.kind === "challenge" ? getChallengeEntries(p.id) : Promise.resolve([]),
+      ),
+    ),
+  ]);
 
   const isSignedIn = fan !== null;
   const isAdmin = adminUser !== null;
@@ -66,8 +79,8 @@ export default async function ArtistCommunityPage({
               {artist.name} community
             </h1>
             <p className="mt-3 text-sm text-white/75">
-              Share photos, reactions, and moments. Every post earns 5 pts, every
-              comment earns 2 pts.
+              Posts +5 pts · comments +2 pts · poll votes +1 pt · challenge
+              entries +3 pts.
             </p>
           </div>
           <Link
@@ -80,7 +93,7 @@ export default async function ArtistCommunityPage({
       </section>
 
       {isSignedIn ? (
-        <NewPostForm artistSlug={slug} />
+        <NewPostForm artistSlug={slug} isAdmin={isAdmin} />
       ) : (
         <section className="rounded-3xl border border-aurora/40 bg-gradient-to-r from-aurora/20 via-slate-900 to-ember/20 p-5">
           <p className="text-sm">
@@ -122,6 +135,8 @@ export default async function ArtistCommunityPage({
               isAuthor={fan !== null && post.author_id === fan.id}
               isAdmin={isAdmin}
               currentUserId={fan?.id ?? null}
+              poll={pollByPost[i]}
+              challengeEntries={entriesByPost[i]}
             />
           ))}
         </div>

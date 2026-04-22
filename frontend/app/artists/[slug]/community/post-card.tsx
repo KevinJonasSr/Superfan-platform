@@ -1,13 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import type { CommunityComment, CommunityPost } from "@/lib/data/types";
+import type {
+  ChallengeEntry,
+  CommunityComment,
+  CommunityPost,
+  PollData,
+} from "@/lib/data/types";
 import {
   addCommentAction,
   deletePostAction,
   togglePinAction,
   toggleReactionAction,
 } from "./actions";
+import PollBlock from "./poll-block";
+import ChallengeBlock from "./challenge-block";
 
 const REACTION_SET = ["❤️", "🔥", "👏", "💯", "😂"] as const;
 
@@ -25,32 +32,67 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
+function KindBadge({ kind }: { kind: CommunityPost["kind"] }) {
+  if (kind === "announcement") {
+    return (
+      <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-sky-200">
+        📢 Announcement
+      </span>
+    );
+  }
+  if (kind === "poll") {
+    return (
+      <span className="rounded-full bg-fuchsia-500/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-fuchsia-200">
+        📊 Poll
+      </span>
+    );
+  }
+  if (kind === "challenge") {
+    return (
+      <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-200">
+        🏆 Challenge
+      </span>
+    );
+  }
+  return null;
+}
+
 export default function PostCard({
   post,
   initialComments,
   isAuthor,
   isAdmin,
   currentUserId,
+  poll,
+  challengeEntries,
 }: {
   post: CommunityPost;
   initialComments: CommunityComment[];
   isAuthor: boolean;
   isAdmin: boolean;
   currentUserId: string | null;
+  poll?: PollData | null;
+  challengeEntries?: ChallengeEntry[];
 }) {
   const [showComments, setShowComments] = useState(false);
 
+  const accentRing =
+    post.kind === "announcement"
+      ? "ring-1 ring-sky-400/40"
+      : post.pinned
+        ? "ring-1 ring-amber-400/40"
+        : "";
+
   return (
-    <article
-      className={`glass-card space-y-3 p-5 ${
-        post.pinned ? "ring-1 ring-amber-400/40" : ""
-      }`}
-    >
+    <article className={`glass-card space-y-3 p-5 ${accentRing}`}>
       <header className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold">
-            {post.author_first_name ?? "Anonymous fan"}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-semibold">
+              {post.author_first_name ?? "Anonymous fan"}
+            </p>
+            <KindBadge kind={post.kind} />
+          </div>
           <p className="text-xs text-white/50">{timeAgo(post.created_at)}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -81,6 +123,15 @@ export default function PostCard({
         </div>
       </header>
 
+      {post.title && (
+        <h2
+          className="text-xl font-semibold"
+          style={{ fontFamily: "var(--font-display)" }}
+        >
+          {post.title}
+        </h2>
+      )}
+
       <p className="whitespace-pre-wrap text-sm text-white/90">{post.body}</p>
 
       {post.image_url && (
@@ -89,6 +140,24 @@ export default function PostCard({
           src={post.image_url}
           alt=""
           className="max-h-96 w-full rounded-2xl object-cover"
+        />
+      )}
+
+      {post.kind === "poll" && poll && (
+        <PollBlock
+          postId={post.id}
+          artistSlug={post.artist_slug}
+          poll={poll}
+          currentUserId={currentUserId}
+        />
+      )}
+
+      {post.kind === "challenge" && (
+        <ChallengeBlock
+          postId={post.id}
+          artistSlug={post.artist_slug}
+          entries={challengeEntries ?? []}
+          currentUserId={currentUserId}
         />
       )}
 

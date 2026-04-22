@@ -114,6 +114,136 @@ export async function deletePostAction(formData: FormData) {
   revalidatePath(`/artists/${artistSlug}/community`);
 }
 
+// ─── Phase 2a: polls ──────────────────────────────────────────────────────
+
+export async function createPollAction(formData: FormData) {
+  // Admin only — regular fans can't create polls in Phase 2a.
+  const adminUser = await getAdminUser();
+  if (!adminUser) return;
+
+  const artistSlug = String(formData.get("artist_slug") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim();
+  const options = formData
+    .getAll("option")
+    .map((o) => String(o).trim())
+    .filter((o) => o.length > 0);
+  if (!artistSlug || !body || options.length < 2 || options.length > 6) return;
+
+  const admin = createAdminClient();
+  const { data: post } = await admin
+    .from("community_posts")
+    .insert({
+      artist_slug: artistSlug,
+      author_id: adminUser.id,
+      kind: "poll",
+      body,
+    })
+    .select("id")
+    .single();
+  if (!post) return;
+
+  await admin.from("community_poll_options").insert(
+    options.map((label, i) => ({
+      post_id: post.id,
+      label,
+      sort_order: i,
+    })),
+  );
+
+  revalidatePath(`/artists/${artistSlug}/community`);
+}
+
+export async function votePollAction(formData: FormData) {
+  const postId = String(formData.get("post_id") ?? "");
+  const optionId = String(formData.get("option_id") ?? "");
+  const artistSlug = String(formData.get("artist_slug") ?? "");
+  if (!postId || !optionId || !artistSlug) return;
+
+  const { supabase, userId } = await requireUser();
+
+  // If fan already voted, replace their vote (delete + insert).
+  await supabase
+    .from("community_poll_votes")
+    .delete()
+    .eq("post_id", postId)
+    .eq("fan_id", userId);
+
+  await supabase.from("community_poll_votes").insert({
+    post_id: postId,
+    fan_id: userId,
+    option_id: optionId,
+  });
+
+  revalidatePath(`/artists/${artistSlug}/community`);
+}
+
+// ─── Phase 2a: challenges ─────────────────────────────────────────────────
+
+export async function createChallengeAction(formData: FormData) {
+  const adminUser = await getAdminUser();
+  if (!adminUser) return;
+
+  const artistSlug = String(formData.get("artist_slug") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim();
+  const title = String(formData.get("title") ?? "").trim();
+  if (!artistSlug || !body) return;
+
+  const admin = createAdminClient();
+  await admin.from("community_posts").insert({
+    artist_slug: artistSlug,
+    author_id: adminUser.id,
+    kind: "challenge",
+    title: title || null,
+    body,
+  });
+
+  revalidatePath(`/artists/${artistSlug}/community`);
+}
+
+export async function submitEntryAction(formData: FormData) {
+  const postId = String(formData.get("post_id") ?? "");
+  const artistSlug = String(formData.get("artist_slug") ?? "");
+  const body = String(formData.get("body") ?? "").trim();
+  const imageUrlRaw = String(formData.get("image_url") ?? "").trim();
+  if (!postId || !artistSlug || (!body && !imageUrlRaw)) return;
+
+  const { supabase, userId } = await requireUser();
+  const imageUrl = imageUrlRaw && /^https?:\/\//i.test(imageUrlRaw) ? imageUrlRaw : null;
+
+  await supabase.from("community_challenge_entries").insert({
+    post_id: postId,
+    fan_id: userId,
+    body: body || null,
+    image_url: imageUrl,
+  });
+
+  revalidatePath(`/artists/${artistSlug}/community`);
+}
+
+// ─── Phase 2a: announcements ──────────────────────────────────────────────
+
+export async function createAnnouncementAction(formData: FormData) {
+  const adminUser = await getAdminUser();
+  if (!adminUser) return;
+
+  const artistSlug = String(formData.get("artist_slug") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim();
+  const title = String(formData.get("title") ?? "").trim();
+  if (!artistSlug || !body) return;
+
+  const admin = createAdminClient();
+  await admin.from("community_posts").insert({
+    artist_slug: artistSlug,
+    author_id: adminUser.id,
+    kind: "announcement",
+    title: title || null,
+    body,
+    pinned: true, // announcements are pinned by default
+  });
+
+  revalidatePath(`/artists/${artistSlug}/community`);
+}
+
 export async function togglePinAction(formData: FormData) {
   // Admin only — pins a post to the top of an artist's feed.
   const postId = String(formData.get("post_id") ?? "");

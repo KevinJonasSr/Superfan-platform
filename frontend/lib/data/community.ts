@@ -1,5 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
-import type { CommunityComment, CommunityPost } from "./types";
+import type {
+  ChallengeEntry,
+  CommunityComment,
+  CommunityPost,
+  PollData,
+  PollOption,
+} from "./types";
 
 /**
  * Fetches the community feed for one artist, newest first with pinned
@@ -96,6 +102,106 @@ export async function getPostsByArtist(
           my_reactions: myReactionsByPost.get(p.id as string) ?? [],
           comment_count: commentCountsByPost.get(p.id as string) ?? 0,
         }) as CommunityPost,
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch the poll data for a single poll post: options + vote counts + whether
+ * the current fan has already voted (and which option they picked).
+ */
+export async function getPollData(postId: string): Promise<PollData | null> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const [optionsRes, votesRes, myVoteRes] = await Promise.all([
+      supabase
+        .from("community_poll_options")
+        .select("id, post_id, label, sort_order")
+        .eq("post_id", postId)
+        .order("sort_order"),
+      supabase
+        .from("community_poll_votes")
+        .select("option_id")
+        .eq("post_id", postId),
+      user
+        ? supabase
+            .from("community_poll_votes")
+            .select("option_id")
+            .eq("post_id", postId)
+            .eq("fan_id", user.id)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ]);
+
+    if (optionsRes.error) throw optionsRes.error;
+    const options = optionsRes.data ?? [];
+    if (options.length === 0) return null;
+
+    const voteCounts = new Map<string, number>();
+    for (const v of votesRes.data ?? []) {
+      const oid = v.option_id as string;
+      voteCounts.set(oid, (voteCounts.get(oid) ?? 0) + 1);
+    }
+
+    return {
+      options: options.map(
+        (o) =>
+          ({
+            id: o.id as string,
+            post_id: o.post_id as string,
+            label: o.label as string,
+            sort_order: o.sort_order as number,
+            vote_count: voteCounts.get(o.id as string) ?? 0,
+          }) as PollOption,
+      ),
+      total_votes: [...voteCounts.values()].reduce((a, b) => a + b, 0),
+      my_option_id: (myVoteRes.data?.option_id as string | undefined) ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Challenge entries for a single challenge post, newest first. */
+export async function getChallengeEntries(
+  postId: string,
+): Promise<ChallengeEntry[]> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("community_challenge_entries")
+      .select("id, post_id, fan_id, body, image_url, created_at")
+      .eq("post_id", postId)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    if (!data || data.length === 0) return [];
+
+    const fanIds = [...new Set(data.map((e) => e.fan_id as string))];
+    const { data: fans } = await supabase
+      .from("fans")
+      .select("id, first_name")
+      .in("id", fanIds);
+    const nameById = new Map<string, string | null>(
+      (fans ?? []).map((f) => [f.id as string, (f.first_name as string | null) ?? null]),
+    );
+
+    return data.map(
+      (e) =>
+        ({
+          id: e.id as string,
+          post_id: e.post_id as string,
+          fan_id: e.fan_id as string,
+          fan_first_name: nameById.get(e.fan_id as string) ?? null,
+          body: e.body as string | null,
+          image_url: e.image_url as string | null,
+          created_at: e.created_at as string,
+        }) as ChallengeEntry,
     );
   } catch {
     return [];
