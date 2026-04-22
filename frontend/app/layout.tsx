@@ -6,6 +6,7 @@ import CookieBanner from "@/components/cookie-banner";
 import Footer from "@/components/footer";
 import InstallPrompt from "@/components/install-prompt";
 import { createClient } from "@/lib/supabase/server";
+import { getUnreadCount } from "@/lib/data/notifications";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-body" });
 const spaceGrotesk = Space_Grotesk({
@@ -65,6 +66,16 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const user = await getCurrentUserSafe();
+  // Unread inbox count only matters for signed-in fans. Wrapped in a try so a
+  // transient DB error never breaks the header.
+  let unread = 0;
+  if (user) {
+    try {
+      unread = await getUnreadCount();
+    } catch {
+      unread = 0;
+    }
+  }
 
   return (
     <html
@@ -98,6 +109,23 @@ export default async function RootLayout({
             </nav>
             {user ? (
               <div className="flex items-center gap-3">
+                <Link
+                  href="/inbox"
+                  aria-label={
+                    unread > 0 ? `Inbox — ${unread} unread` : "Inbox"
+                  }
+                  title={
+                    unread > 0 ? `${unread} unread notification${unread === 1 ? "" : "s"}` : "Inbox"
+                  }
+                  className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/30 text-white/80 hover:bg-white/10"
+                >
+                  <span aria-hidden>🔔</span>
+                  {unread > 0 && (
+                    <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-gradient-to-r from-aurora to-ember px-1 text-[10px] font-semibold text-white shadow">
+                      {unread > 9 ? "9+" : unread}
+                    </span>
+                  )}
+                </Link>
                 <Link
                   href="/rewards"
                   className="hidden items-center gap-2 rounded-full border border-white/15 bg-black/30 px-2 py-1 text-xs text-white/80 hover:bg-white/10 sm:inline-flex"

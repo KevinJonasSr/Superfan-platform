@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAdminUser } from "@/lib/admin";
 import { broadcastEmail, broadcastSms } from "@/lib/broadcast";
+import { createNotification } from "@/lib/data/notifications";
 
 /**
  * Campaign builder — single "Publish" action fans out into community posts,
@@ -251,6 +252,47 @@ export async function createAndPublishCampaign(formData: FormData) {
       targeted_event_id: targetEventRsvpers ? attachedEventId : null,
       error: result.error ?? null,
     });
+  }
+
+  // 10) In-app inbox notification for every fan this campaign targets.
+  //     Audience: artist followers when no event is attached; event RSVPers
+  //     when targetEventRsvpers is on. Dedup'd by campaign_id so a fan can
+  //     never see the same campaign twice in their inbox.
+  try {
+    let audienceFanIds: string[] = [];
+    if (targetEventRsvpers && attachedEventId) {
+      const { data: rsvpers } = await supa
+        .from("event_rsvps")
+        .select("fan_id")
+        .eq("event_id", attachedEventId);
+      audienceFanIds = (rsvpers ?? []).map((r) => r.fan_id as string);
+    } else {
+      const { data: followers } = await supa
+        .from("fan_artist_following")
+        .select("fan_id")
+        .eq("artist_slug", artistSlug);
+      audienceFanIds = (followers ?? []).map((r) => r.fan_id as string);
+    }
+
+    const body =
+      String(formData.get("announcement_body") ?? "").trim().slice(0, 140) ||
+      description ||
+      "New artist drop";
+    await Promise.all(
+      audienceFanIds.map((fanId) =>
+        createNotification({
+          fanId,
+          kind: "campaign",
+          title,
+          body,
+          url: `/artists/${artistSlug}/community`,
+          icon: "📣",
+          dedupKey: `campaign:${campaignId}`,
+        }),
+      ),
+    );
+  } catch (err) {
+    console.warn("campaign fan-out (notifications) failed:", err);
   }
 
   revalidatePath("/admin/campaigns");

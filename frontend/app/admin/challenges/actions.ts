@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAdminUser } from "@/lib/admin";
+import { createNotification } from "@/lib/data/notifications";
 
 const WINNER_BONUS_POINTS = 200;
 
@@ -58,6 +59,27 @@ export async function pickWinnerAction(formData: FormData) {
       .update({ total_points: (fanRow?.total_points ?? 0) + WINNER_BONUS_POINTS })
       .eq("id", fanId);
   }
+
+  // In-app notification for the winner — same dedup_key pattern as the
+  // ledger guard, so repeated clicks never spam the fan's inbox.
+  const { data: post } = await supa
+    .from("community_posts")
+    .select("artist_slug, title, body")
+    .eq("id", postId)
+    .maybeSingle();
+  const artistSlug = (post?.artist_slug as string | null) ?? "";
+  const postTitle = (post?.title as string | null) ?? null;
+  const postBody = (post?.body as string | null) ?? "";
+  await createNotification({
+    fanId: fanId,
+    kind: "challenge_winner",
+    title: "🎉 You won the challenge!",
+    body:
+      `${postTitle ?? (postBody.slice(0, 60) || "Your entry")} — +${WINNER_BONUS_POINTS} bonus points.`,
+    url: artistSlug ? `/artists/${artistSlug}/community` : "/rewards",
+    icon: "🏆",
+    dedupKey: `challenge_winner:${postId}:${fanId}`,
+  });
 
   revalidatePath("/admin/challenges");
   revalidatePath("/admin/community");

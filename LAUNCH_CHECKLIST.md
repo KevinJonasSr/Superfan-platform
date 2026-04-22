@@ -3,7 +3,7 @@
 Living document. Update this whenever a launch-blocking item is resolved or a
 new one is discovered. Grouped by category so blockers are easy to scan.
 
-Last updated: commit `1c2d29f` (Phase 3d — legal infrastructure)
+Last updated: Phase 3f — in-app notifications inbox
 
 ---
 
@@ -20,6 +20,7 @@ Last updated: commit `1c2d29f` (Phase 3d — legal infrastructure)
 | 0007 | `0007_events_rsvp.sql` | Event capacity, RSVPs, point trigger | ✅ applied |
 | 0008 | `0008_event_reminders.sql` | event_reminders for cron de-dupe | ✅ applied |
 | **0009** | **`0009_legal_infrastructure.sql`** | **policy_pages, consent, unsub tokens** | **⏳ apply next** |
+| **0010** | **`0010_notifications.sql`** | **notifications table, award_badge fan-out, RSVP + referral triggers** | **⏳ apply after 0009** |
 
 **How to apply:** Supabase dashboard → SQL Editor → paste raw file contents from
 <https://github.com/KevinJonasSr/Superfan-platform/tree/main/supabase/migrations>
