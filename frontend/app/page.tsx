@@ -1,8 +1,10 @@
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import FanHomeDashboard from "@/components/fan-home-dashboard";
 import InviteQRCode from "@/components/invite-qr";
 import { getCurrentFan, getCurrentFanKpis } from "@/lib/data/fan";
+import { getFanHomeData } from "@/lib/data/fan-home";
 import { getFeaturedOffers } from "@/lib/data/offers";
 import { getTiers, tierIcon } from "@/lib/data/tiers";
 import type { TierSlug } from "@/lib/data/types";
@@ -57,13 +59,14 @@ export default async function Home({
     redirect(`/auth/callback?code=${encodeURIComponent(params.code)}&next=/onboarding`);
   }
 
-  // Kick off all three queries in parallel. They each gracefully return
+  // Kick off all queries in parallel. They each gracefully return
   // null / empty on any error, so the page never breaks.
-  const [fan, kpis, featured, tiers] = await Promise.all([
+  const [fan, kpis, featured, tiers, fanHome] = await Promise.all([
     getCurrentFan(),
     getCurrentFanKpis(),
     getFeaturedOffers(3),
     getTiers(),
+    getFanHomeData(),
   ]);
 
   // Build the KPI grid. If we have a real KPI row, use it; otherwise the
@@ -139,6 +142,12 @@ export default async function Home({
                 Complete profile
               </Link>
             </section>
+          )}
+          {/* Personalized Fan Home dashboard — only for signed-in fans with a
+              finished profile. Falls through to the static preview content
+              below otherwise. */}
+          {isSignedIn && !needsProfile && fanHome && (
+            <FanHomeDashboard data={fanHome} />
           )}
           <section className="glass-card p-6">
             <p className="flex items-center gap-2 text-sm uppercase tracking-wide text-white/60">

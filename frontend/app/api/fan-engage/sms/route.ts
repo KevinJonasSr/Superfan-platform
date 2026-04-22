@@ -30,9 +30,13 @@ export async function POST(request: Request) {
     }
 
     const client = twilio(accountSid, authToken);
-    const body = `Hey ${firstName ?? "fan"}! You're in for Fan Engage updates${
-      interest ? ` on ${interest}` : ""
-    }. Reply STOP to opt out.`;
+    // Welcome text — points at the first point-earning action so the fan has
+    // a reason to open the app right away. Includes carrier-required opt-out.
+    const body =
+      `Hey ${firstName ?? "fan"}! 🎶 Welcome to Fan Engage` +
+      (interest ? ` — we'll keep an ear out for ${interest}.` : ".") +
+      ` Earn your first 100 pts: follow an artist, RSVP to an event, or share the app. ` +
+      `Reply HELP for help. STOP to opt out. Msg&data rates may apply.`;
 
     const config: Parameters<typeof client.messages.create>[0] = {
       to: phone,

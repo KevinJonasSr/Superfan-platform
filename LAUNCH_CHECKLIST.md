@@ -60,6 +60,7 @@ counsel returns the real copy.
 - [ ] **SMS 10DLC brand + campaign registration** (US carrier requirement) — submit via Twilio Console
 - [ ] **Twilio inbound webhook** — point Messaging Service inbound URL to `https://fan-engage-pearl.vercel.app/api/twilio/inbound` so STOP/HELP compliance actually fires. Verify a real STOP message flips the opt-in flag.
 - [ ] **COPPA** — if we expect under-13 users, need parental consent flow. Current ToS draft says 13+; confirm with counsel.
+- [ ] **Mailchimp welcome automation** — we now tag every new fan with `welcome` at signup (Phase 3e). Configure a Mailchimp Automation in the dashboard to fire a welcome email when the `welcome` tag is applied. Suggested copy: "Welcome to Fan Engage — here's how to earn your first 100 points" with a CTA back to `/artists`.
 
 ---
 

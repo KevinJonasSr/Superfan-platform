@@ -4,6 +4,7 @@ import { Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import CookieBanner from "@/components/cookie-banner";
 import Footer from "@/components/footer";
+import InstallPrompt from "@/components/install-prompt";
 import { createClient } from "@/lib/supabase/server";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-body" });
@@ -16,6 +17,13 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata: Metadata = {
   title: "Fan Engage",
   description: "The superfan platform — rewards, marketplace, referrals, and more.",
+  manifest: "/manifest.json",
+  themeColor: "#7c3aed",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Fan Engage",
+  },
 };
 
 const navItems = [
@@ -141,6 +149,7 @@ export default async function RootLayout({
         {children}
         <Footer />
         <CookieBanner />
+        <InstallPrompt />
       </body>
     </html>
   );

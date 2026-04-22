@@ -191,15 +191,19 @@ export default function OnboardingWizard() {
         document.cookie = "fanengage_ref=; path=/; max-age=0";
       }
 
-      // 2. Mailchimp subscribe (fire-and-forget)
+      // 2. Mailchimp subscribe (fire-and-forget). Adds a "welcome" tag so
+      //    Kevin can wire a Mailchimp Automation that fires the welcome email
+      //    as soon as the tag is applied — zero extra code on our side.
       if (formState.email) {
+        const tags = ["welcome"];
+        if (formState.interest) tags.push(formState.interest);
         fetch("/api/fan-engage/mailchimp", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             email: formState.email,
             firstName: formState.firstName,
-            tags: formState.interest ? [formState.interest] : undefined,
+            tags,
           }),
         }).catch((err) => console.warn("Mailchimp subscribe did not complete:", err));
       }
