@@ -90,3 +90,32 @@ export interface LeaderboardRow {
   display_name: string;
   referral_count: number;
 }
+
+// ─── Community Hub ─────────────────────────────────────────────────────────
+
+export type CommunityPostKind = "post" | "announcement" | "poll" | "challenge";
+
+export interface CommunityPost {
+  id: string;
+  artist_slug: string;
+  author_id: string;
+  author_first_name: string | null;
+  kind: CommunityPostKind;
+  title: string | null;
+  body: string;
+  image_url: string | null;
+  pinned: boolean;
+  created_at: string;
+  reaction_counts: Record<string, number>; // { "❤️": 3, "🔥": 2 }
+  my_reactions: string[]; // emoji list the current fan has already given
+  comment_count: number;
+}
+
+export interface CommunityComment {
+  id: string;
+  post_id: string;
+  author_id: string;
+  author_first_name: string | null;
+  body: string;
+  created_at: string;
+}

@@ -76,6 +76,12 @@ export default async function ArtistPage({
             {primaryCta.label}
           </Link>
           <Link
+            href={`/artists/${slug}/community`}
+            className="rounded-full border border-white/30 px-6 py-3 text-sm font-medium text-white/80 hover:bg-white/10"
+          >
+            Community →
+          </Link>
+          <Link
             href={secondaryCta.href}
             className="rounded-full border border-white/30 px-6 py-3 text-sm font-medium text-white/80 hover:bg-white/10"
           >
