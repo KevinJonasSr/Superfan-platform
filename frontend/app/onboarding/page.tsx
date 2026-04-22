@@ -147,11 +147,21 @@ export default function OnboardingWizard() {
     try {
       setFinishStatus("saving");
 
-      // 1. Persist the profile + award signup bonus + record any ?ref= code
-      const refCode =
+      // 1. Persist the profile + award signup bonus + record any ?ref= code.
+      // Fallback to the fanengage_ref cookie that /invite/[code] sets so the
+      // attribution survives the auth round-trip.
+      const refFromUrl =
         typeof window !== "undefined"
           ? new URLSearchParams(window.location.search).get("ref") ?? undefined
           : undefined;
+      const refFromCookie =
+        typeof document !== "undefined"
+          ? document.cookie
+              .split("; ")
+              .find((c) => c.startsWith("fanengage_ref="))
+              ?.split("=")[1]
+          : undefined;
+      const refCode = refFromUrl ?? refFromCookie;
       const onboardRes = await fetch("/api/fan-engage/onboard", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -170,6 +180,11 @@ export default function OnboardingWizard() {
 
       if (!onboardRes.ok) {
         throw new Error(`Onboarding save failed (${onboardRes.status})`);
+      }
+
+      // Clear the referral cookie — attribution is now recorded in the DB.
+      if (refFromCookie && typeof document !== "undefined") {
+        document.cookie = "fanengage_ref=; path=/; max-age=0";
       }
 
       // 2. Mailchimp subscribe (fire-and-forget)
