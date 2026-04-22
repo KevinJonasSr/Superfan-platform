@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAdminUser } from "@/lib/admin";
+import { broadcastEmail, broadcastSms } from "@/lib/broadcast";
 
 /**
  * Campaign builder — single "Publish" action fans out into community posts,
@@ -179,16 +180,31 @@ export async function createAndPublishCampaign(formData: FormData) {
     if (action) await recordItem("action", action.id as string, { kind: cta.kind });
   }
 
-  // 7) Email + SMS blasts (optional) — fire-and-forget via existing APIs
+  // 7) Email blast — create + send a Mailchimp regular campaign
   const emailSubject = String(formData.get("email_subject") ?? "").trim();
   const emailBody = String(formData.get("email_body") ?? "").trim();
   if (emailSubject && emailBody) {
-    // Record intent; actual Mailchimp send happens via their campaign tooling.
-    await recordItem("email", null, { subject: emailSubject, body: emailBody });
+    const result = await broadcastEmail({ subject: emailSubject, body: emailBody });
+    await recordItem("email", null, {
+      subject: emailSubject,
+      body: emailBody,
+      sent: result.sent,
+      recipients: result.recipients,
+      error: result.error ?? null,
+    });
   }
+
+  // 8) SMS blast — iterate opted-in fans via Twilio (throttled)
   const smsBody = String(formData.get("sms_body") ?? "").trim();
   if (smsBody) {
-    await recordItem("sms", null, { body: smsBody });
+    const result = await broadcastSms({ body: smsBody, artistSlug });
+    await recordItem("sms", null, {
+      body: smsBody,
+      sent: result.sent,
+      failed: result.failed,
+      recipients: result.recipients,
+      error: result.error ?? null,
+    });
   }
 
   revalidatePath("/admin/campaigns");

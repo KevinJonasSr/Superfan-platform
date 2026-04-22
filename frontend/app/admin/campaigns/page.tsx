@@ -17,19 +17,34 @@ async function loadCampaigns() {
   const ids = campaigns.map((c) => c.id as string);
   const { data: items } = await admin
     .from("campaign_items")
-    .select("campaign_id,item_kind")
+    .select("campaign_id,item_kind,metadata")
     .in("campaign_id", ids);
 
   const itemCounts = new Map<string, Record<string, number>>();
+  const broadcastStats = new Map<string, { emailSent?: number; emailFailed?: string | null; smsSent?: number; smsFailed?: string | null }>();
   for (const it of items ?? []) {
     const map = itemCounts.get(it.campaign_id as string) ?? {};
     const kind = it.item_kind as string;
     map[kind] = (map[kind] ?? 0) + 1;
     itemCounts.set(it.campaign_id as string, map);
+
+    if (kind === "email" || kind === "sms") {
+      const meta = (it.metadata ?? {}) as { sent?: number; error?: string | null };
+      const stats = broadcastStats.get(it.campaign_id as string) ?? {};
+      if (kind === "email") {
+        stats.emailSent = meta.sent;
+        stats.emailFailed = meta.error ?? null;
+      } else {
+        stats.smsSent = meta.sent;
+        stats.smsFailed = meta.error ?? null;
+      }
+      broadcastStats.set(it.campaign_id as string, stats);
+    }
   }
   return campaigns.map((c) => ({
     ...c,
     items: itemCounts.get(c.id as string) ?? {},
+    broadcast: broadcastStats.get(c.id as string) ?? {},
   }));
 }
 
@@ -123,6 +138,20 @@ export default async function AdminCampaignsPage() {
                         ? `Published ${new Date(c.published_at as string).toLocaleString()}`
                         : "Draft"}
                     </p>
+                    {(c.broadcast.emailSent != null || c.broadcast.smsSent != null) && (
+                      <div className="mt-2 flex flex-wrap gap-3 text-[11px]">
+                        {c.broadcast.emailSent != null && (
+                          <span className={c.broadcast.emailFailed ? "text-rose-300" : "text-emerald-300"}>
+                            ✉️ {c.broadcast.emailFailed ? `failed: ${c.broadcast.emailFailed.slice(0, 60)}` : `sent · ${c.broadcast.emailSent} recipients`}
+                          </span>
+                        )}
+                        {c.broadcast.smsSent != null && (
+                          <span className={c.broadcast.smsFailed ? "text-rose-300" : "text-emerald-300"}>
+                            💬 {c.broadcast.smsFailed ? `failed: ${c.broadcast.smsFailed.slice(0, 60)}` : `sent · ${c.broadcast.smsSent} recipients`}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   {active && (
                     <form action={deactivateCampaignAction}>
