@@ -1,15 +1,12 @@
-import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { createAdminClient } from "@/lib/supabase/admin";
+import SetRefCookie from "./set-ref-cookie";
 
 export const metadata: Metadata = {
   title: "You're invited · Fan Engage",
 };
-
-const REF_COOKIE = "fanengage_ref";
-const REF_COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
 async function getInviter(code: string): Promise<{
   firstName: string | null;
@@ -38,20 +35,11 @@ export default async function InvitePage({
   const inviter = await getInviter(code);
   if (!inviter) notFound();
 
-  // Store the referral code in a cookie so onboarding can attribute the
-  // signup back to the referrer after the auth round-trip. Not HttpOnly —
-  // the client wizard reads it, and it's not sensitive data.
-  const cookieStore = await cookies();
-  cookieStore.set(REF_COOKIE, code, {
-    maxAge: REF_COOKIE_MAX_AGE,
-    path: "/",
-    sameSite: "lax",
-  });
-
   const inviterName = inviter.firstName ?? "A Fan Engage fan";
 
   return (
     <main className="mx-auto flex min-h-[80vh] max-w-xl flex-col justify-center gap-6 px-6 py-12">
+      <SetRefCookie code={code} />
       <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-aurora/30 via-slate-900 to-ember/20 p-8 shadow-glass">
         <p className="text-xs uppercase tracking-[0.3em] text-white/60">You&apos;re invited</p>
         <h1 className="mt-3 text-3xl font-semibold" style={{ fontFamily: "var(--font-display)" }}>
