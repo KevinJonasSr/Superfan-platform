@@ -1,51 +1,129 @@
-# Launch checklist — deferred items
+# Fan Engage — Launch Checklist
 
-Items that are **not blocking** day-to-day use but need to be done before a
-full public launch. Keep this file in git so nothing gets lost across sessions.
+Living document. Update this whenever a launch-blocking item is resolved or a
+new one is discovered. Grouped by category so blockers are easy to scan.
 
-## 🔒 Admin Basic Auth (extra password layer on `/admin/*`)
+Last updated: commit `1c2d29f` (Phase 3d — legal infrastructure)
 
-The admin surface already has three protection layers:
+---
 
-1. Next.js middleware redirects unauthenticated users to `/login?next=/admin`
-2. Supabase auth (magic-link email sign-in)
-3. `ADMIN_EMAILS` allowlist check in `lib/admin.ts#getAdminUser()`
+## 🗄️ Supabase migrations to apply
 
-There is also a **fourth optional layer** — HTTP Basic Auth at the edge via
-`middleware.ts` — that is not yet enabled. When turned on, the browser prompts
-for a username + password **before** any admin page loads, even before
-Supabase auth gets a chance to run.
+| # | File | Adds | Status |
+|---|---|---|---|
+| 0001 | `0001_init.sql` | Fans, points, tiers, badges, referrals, offers, purchases | ✅ applied |
+| 0002 | `0002_community.sql` | community_posts, reactions, comments | ✅ applied |
+| 0003 | `0003_community_phase2.sql` | Polls, challenge entries | ✅ applied |
+| 0004 | `0004_badges_and_storage.sql` | 13 starter badges, avatars, buckets, triggers | ✅ applied |
+| 0005 | `0005_campaigns_and_moderation.sql` | Campaigns, CTAs, fan suspend | ✅ applied |
+| 0006 | `0006_artists_and_following.sql` | DB-backed artists, events, per-artist following | ✅ applied |
+| 0007 | `0007_events_rsvp.sql` | Event capacity, RSVPs, point trigger | ✅ applied |
+| 0008 | `0008_event_reminders.sql` | event_reminders for cron de-dupe | ✅ applied |
+| **0009** | **`0009_legal_infrastructure.sql`** | **policy_pages, consent, unsub tokens** | **⏳ apply next** |
 
-**To enable:**
+**How to apply:** Supabase dashboard → SQL Editor → paste raw file contents from
+<https://github.com/KevinJonasSr/Superfan-platform/tree/main/supabase/migrations>
+→ Run. Confirm the "destructive operations" dialog when it appears (it's always
+just `drop policy if exists` / `drop trigger if exists` being safely idempotent).
 
-1. Go to <https://vercel.com/jonas-group/fan-engage/settings/environment-variables>
-2. Add two env vars to the Production environment:
-   - `ADMIN_BASIC_USER` — pick a username
-   - `ADMIN_BASIC_PASS` — pick a strong password
-3. Trigger a redeploy (push any commit, or click "Redeploy" on the latest deploy)
-4. Verify: incognito window → `https://fan-engage-pearl.vercel.app/admin` →
-   browser should pop a native "Sign in to Fan Engage Admin" dialog
+---
 
-If either env var is missing, the Basic Auth layer is bypassed and the other
-three layers still enforce protection.
+## 🔐 Vercel env vars to set
 
-## 🤖 Cron secret for automated event reminders
+| Variable | Purpose | Status |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase connection | ✅ set |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key | ✅ set |
+| `SUPABASE_SERVICE_ROLE_KEY` | Admin-scoped Supabase operations | ✅ set |
+| `MAILCHIMP_API_KEY`, `MAILCHIMP_SERVER_PREFIX`, `MAILCHIMP_AUDIENCE_ID` | Email subscribe + broadcast | ✅ set |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_MESSAGING_SERVICE_SID` | SMS outbound | ✅ set |
+| `ADMIN_EMAILS` | Allowlist for `/admin/*` access | ✅ set |
+| **`CRON_SECRET`** | Protects `/api/cron/send-event-reminders` from public hits | **⏳ set next** |
+| **`ADMIN_BASIC_USER`** + **`ADMIN_BASIC_PASS`** | Optional extra HTTP Basic Auth on `/admin/*` | **⏳ optional** |
+| **`NEXT_PUBLIC_APP_URL`** | Used in email unsubscribe links (defaults to `fan-engage-pearl.vercel.app` if unset) | **⏳ set before custom domain** |
 
-Phase 3c adds a Vercel Cron that runs every 15 minutes to fire 24h + 1h
-event reminders via SMS + email. The cron endpoint is protected by an
-optional bearer token — set `CRON_SECRET` in Vercel and Vercel Cron
-automatically attaches it to every invocation.
+Vercel env vars: <https://vercel.com/jonas-group/fan-engage/settings/environment-variables>
 
-**To enable:**
+---
 
-1. Go to <https://vercel.com/jonas-group/fan-engage/settings/environment-variables>
-2. Add `CRON_SECRET` (pick a long random string)
-3. Redeploy so the cron route picks up the value
-4. Confirm the cron is scheduled: <https://vercel.com/jonas-group/fan-engage/crons>
-   — should list `/api/cron/send-event-reminders` with `*/15 * * * *`
+## 📋 Legal + compliance content
 
-If the secret isn't set the route runs without auth, which is fine for
-dev/preview but a security hole in production.
+Policy pages and SMS webhook are already live — text is placeholder until
+counsel returns the real copy.
 
-## Other launch-time TODOs
-_(Add items here as they come up.)_
+- [ ] **Terms of Service** — paste final copy into `/admin/policies/terms`, set `effective_date`, uncheck DRAFT
+- [ ] **Privacy Policy** — paste final copy into `/admin/policies/privacy`, set `effective_date`, uncheck DRAFT
+- [ ] **Cookie Policy** — paste final copy into `/admin/policies/cookie_policy`, set `effective_date`, uncheck DRAFT
+- [ ] **Terms audit** — confirm references to Fan Engage, Anthropic, Supabase, Twilio, Mailchimp all match what we actually do
+- [ ] **Privacy — data retention + deletion** — lawyer to confirm retention periods (account deletion, post retention, referral log retention)
+- [ ] **DMCA / content takedown policy** — if user-uploaded images become a real volume
+- [ ] **SMS 10DLC brand + campaign registration** (US carrier requirement) — submit via Twilio Console
+- [ ] **Twilio inbound webhook** — point Messaging Service inbound URL to `https://fan-engage-pearl.vercel.app/api/twilio/inbound` so STOP/HELP compliance actually fires. Verify a real STOP message flips the opt-in flag.
+- [ ] **COPPA** — if we expect under-13 users, need parental consent flow. Current ToS draft says 13+; confirm with counsel.
+
+---
+
+## 🌐 Domain + production polish
+
+- [ ] **Custom domain** — point a real domain (e.g. `fanengage.app`) at the Vercel project; add DNS records; set as primary
+- [ ] **Update Supabase Site URL + redirect URLs** to the custom domain so auth magic links point to the right place
+- [ ] **Update Mailchimp campaign from-domain** to match
+- [ ] **Set `NEXT_PUBLIC_APP_URL`** to the custom domain so unsubscribe links use it
+- [ ] **Favicon + OG image** — polish the social preview when someone shares a Fan Engage link
+
+---
+
+## 🎨 Content to finalize
+
+- [ ] **Artist bios** — replace "Placeholder bio — awaiting final copy" in `/admin/artists/[slug]` for all 5 artists
+- [ ] **Artist hero images** — upload real hero art via the admin editor
+- [ ] **Tour dates** — replace "TBD" / "Dates to come" events with real tour dates once announced
+- [ ] **Social links** — fill in TikTok, Spotify, Apple Music, Instagram per artist
+- [ ] **Merchandise** — Phase 3 stashed this as "offers-per-artist" follow-up
+- [ ] **Marketing landing / `/` copy** — the root route may need a sharper pitch for new visitors
+
+---
+
+## 🔒 Admin + security
+
+- [ ] **`ADMIN_BASIC_USER` + `ADMIN_BASIC_PASS`** in Vercel (optional second password layer)
+- [ ] **SSO / team accounts** — if other team members need admin access beyond the email allowlist
+- [ ] **Audit log** — who did what in the admin UI (moderation actions, campaign sends, policy edits)
+- [ ] **Rate limiting** on public API routes (`/api/upload`, `/api/fan-engage/*`) — upstash/ratelimit is cheap to add
+
+---
+
+## 📊 Observability
+
+- [ ] **Error tracking** — Sentry or Vercel's built-in logs; decide + wire up
+- [ ] **Uptime monitoring** — especially for the cron (Vercel Crons logs are minimal)
+- [ ] **Email + SMS deliverability dashboard** — surface bounce/complaint rates inside `/admin/analytics`
+
+---
+
+## 📈 Nice-to-have before scale
+
+- [ ] **Per-artist Mailchimp segmentation** — email blasts still go to whole audience; SMS is already per-artist/event
+- [ ] **Offers-per-artist + marketplace integration** — connect campaign-created offers to artist pages
+- [ ] **Fan Home personalization** — live feed of followed artists' activity
+- [ ] **Weekly digest cron** — another scheduled blast ("your artists this week")
+- [ ] **In-app notifications inbox** — badge earns, RSVP confirmations, challenge wins, new campaigns
+- [ ] **PWA manifest** — add-to-home-screen, offline shell
+- [ ] **Leaderboards** — per-artist top fans by points / referrals
+- [ ] **Onboarding welcome email + SMS** — fire a welcome message right after signup
+- [ ] **Data export + delete-account** (CCPA/GDPR self-serve)
+
+---
+
+## ✅ Done
+
+Recorded for the paper trail:
+
+- Phase 1 — Core platform (fan home, rewards, marketplace, referrals, community, invite/QR)
+- Phase 2a — Community Hub (polls, challenges, announcements, reactions, comments)
+- Phase 2b — Auto-awarded badges + Supabase Storage image uploads
+- Phase 2c — Admin dashboard + campaigns + CTAs + moderation + 3-layer security
+- Phase 3a — DB-backed artists + editor + per-artist following
+- Phase 3b — Event RSVPs + capacity + .ics + per-event campaign audiences
+- Phase 3c — Automated 24h + 1h reminders via Vercel Cron
+- Phase 3d — Policy pages (DRAFT) + cookie banner + footer + onboarding consent + unsubscribe + Twilio STOP webhook
