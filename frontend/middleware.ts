@@ -5,7 +5,39 @@ import { createServerClient } from "@supabase/ssr";
  * Routes a signed-in user must be able to reach.
  * Everything else under /app that's not here or public is open.
  */
-const PROTECTED_PREFIXES = ["/rewards", "/marketplace", "/referrals"] as const;
+const PROTECTED_PREFIXES = ["/rewards", "/marketplace", "/referrals", "/admin"] as const;
+
+/**
+ * Optional extra protection: a second HTTP Basic Auth layer on /admin/*.
+ * Set ADMIN_BASIC_USER + ADMIN_BASIC_PASS in Vercel to enable. When not
+ * set the route still falls through to the Supabase + ADMIN_EMAILS gate
+ * in getAdminUser, so dev flows aren't blocked.
+ */
+function enforceAdminBasicAuth(request: NextRequest): NextResponse | null {
+  if (!request.nextUrl.pathname.startsWith("/admin")) return null;
+  const user = process.env.ADMIN_BASIC_USER;
+  const pass = process.env.ADMIN_BASIC_PASS;
+  if (!user || !pass) return null;
+
+  const header = request.headers.get("authorization") ?? "";
+  if (header.toLowerCase().startsWith("basic ")) {
+    try {
+      const decoded = atob(header.slice(6).trim());
+      const [u, ...rest] = decoded.split(":");
+      const p = rest.join(":");
+      if (u === user && p === pass) return null; // pass through
+    } catch {
+      /* fallthrough to challenge */
+    }
+  }
+
+  return new NextResponse("Admin access required", {
+    status: 401,
+    headers: {
+      "WWW-Authenticate": 'Basic realm="Fan Engage Admin", charset="UTF-8"',
+    },
+  });
+}
 
 /**
  * Refreshes the Supabase session on every request and redirects unauthenticated
@@ -16,6 +48,10 @@ const PROTECTED_PREFIXES = ["/rewards", "/marketplace", "/referrals"] as const;
  * so previews of non-protected routes still work end-to-end.
  */
 export async function middleware(request: NextRequest) {
+  // Layer 0: optional HTTP Basic Auth on /admin/*
+  const basicAuthBlock = enforceAdminBasicAuth(request);
+  if (basicAuthBlock) return basicAuthBlock;
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anon) {

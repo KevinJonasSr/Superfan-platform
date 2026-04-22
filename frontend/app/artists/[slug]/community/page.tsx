@@ -4,12 +4,14 @@ import type { Metadata } from "next";
 import { getArtist, listArtists } from "@/lib/artists";
 import { getAdminUser } from "@/lib/admin";
 import { getCurrentFan } from "@/lib/data/fan";
+import { getActiveFanActionsForArtist } from "@/lib/data/campaigns";
 import {
   getChallengeEntries,
   getCommentsByPost,
   getPollData,
   getPostsByArtist,
 } from "@/lib/data/community";
+import FanCtaBlock from "./fan-cta-block";
 import NewPostForm from "./new-post-form";
 import PostCard from "./post-card";
 
@@ -37,10 +39,11 @@ export default async function ArtistCommunityPage({
   const artist = getArtist(slug);
   if (!artist) notFound();
 
-  const [fan, posts, adminUser] = await Promise.all([
+  const [fan, posts, adminUser, fanActions] = await Promise.all([
     getCurrentFan(),
     getPostsByArtist(slug, 30),
     getAdminUser(),
+    getActiveFanActionsForArtist(slug),
   ]);
 
   // Parallel-fetch comments + poll data + challenge entries for every visible
@@ -91,6 +94,8 @@ export default async function ArtistCommunityPage({
           </Link>
         </div>
       </section>
+
+      <FanCtaBlock artistSlug={slug} actions={fanActions} signedIn={isSignedIn} />
 
       {isSignedIn ? (
         <NewPostForm artistSlug={slug} isAdmin={isAdmin} />

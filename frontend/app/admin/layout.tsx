@@ -4,8 +4,12 @@ import { getAdminUser } from "@/lib/admin";
 
 const adminNav = [
   { href: "/admin", label: "Overview" },
+  { href: "/admin/campaigns", label: "Campaigns" },
+  { href: "/admin/community", label: "Community" },
+  { href: "/admin/challenges", label: "Challenges" },
   { href: "/admin/offers", label: "Offers" },
   { href: "/admin/fans", label: "Fans" },
+  { href: "/admin/analytics", label: "Analytics" },
 ];
 
 export default async function AdminLayout({
