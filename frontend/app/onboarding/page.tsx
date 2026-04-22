@@ -102,6 +102,31 @@ export default function OnboardingWizard() {
           console.warn("Mailchimp subscribe did not complete:", err);
         });
       }
+
+      // Fire-and-forget backend onboarding completion. Requires a Supabase
+      // session — if the user isn't signed in, the endpoint returns 401 and
+      // we ignore it (preview flow still works).
+      const refCode =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("ref") ?? undefined
+          : undefined;
+      fetch("/api/fan-engage/onboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: formState.firstName,
+          city: formState.city,
+          phone: formState.phone,
+          handle: formState.handle,
+          favoriteSong: formState.favoriteSong,
+          interest: formState.interest,
+          referralCode: refCode,
+          smsOptedIn: true,
+          emailOptedIn: Boolean(formState.email),
+        }),
+      }).catch((err) => {
+        console.warn("Onboarding completion did not persist:", err);
+      });
     } catch (error) {
       console.error(error);
       setSmsStatus("error");

@@ -21,6 +21,7 @@ const navItems = [
   { href: "/rewards", label: "Rewards" },
   { href: "/marketplace", label: "Marketplace" },
   { href: "/referrals", label: "Referrals" },
+  { href: "/artists", label: "Artists" },
 ];
 
 /**

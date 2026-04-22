@@ -1,6 +1,11 @@
 import Link from "next/link";
+import { getCurrentFan, getCurrentFanKpis } from "@/lib/data/fan";
+import { getFeaturedOffers } from "@/lib/data/offers";
+import { getTiers, tierIcon } from "@/lib/data/tiers";
+import type { TierSlug } from "@/lib/data/types";
 
-const kpis = [
+// ─── Static preview content (shown when the viewer isn't signed in) ────────
+const fallbackKpis = [
   { label: "Total Points", value: "12,450", delta: "+320 today" },
   { label: "Referrals", value: "38", delta: "+4 this week" },
   { label: "Badges", value: "12", delta: "2 new" },
@@ -18,7 +23,7 @@ const events = [
   { title: "NYC Soundcheck", detail: "VIP access only", date: "Apr 07" },
 ];
 
-const offers = [
+const fallbackOffers = [
   { title: "Signed Vinyl + Poster", tier: "Gold Exclusive", points: "4,500 pts" },
   { title: "Backstage Experience", tier: "Platinum Drop", points: "10,000 pts" },
   { title: "Limited Hoodie", tier: "Silver Priority", points: "3,200 pts" },
@@ -31,14 +36,51 @@ const quickActions: { label: string; href: string }[] = [
   { label: "Invite a friend", href: "/onboarding" },
 ];
 
-const tiers = [
-  { label: "Bronze", status: "Complete", icon: "🥉" },
-  { label: "Silver", status: "68%", icon: "🥈" },
-  { label: "Gold", status: "Locked", icon: "🥇" },
-  { label: "Platinum", status: "Locked", icon: "👑" },
-];
+function formatPts(n: number | null | undefined) {
+  if (n == null) return "—";
+  return new Intl.NumberFormat("en-US").format(n) + " pts";
+}
 
-export default function Home() {
+export default async function Home() {
+  // Kick off all three queries in parallel. They each gracefully return
+  // null / empty on any error, so the page never breaks.
+  const [fan, kpis, featured, tiers] = await Promise.all([
+    getCurrentFan(),
+    getCurrentFanKpis(),
+    getFeaturedOffers(3),
+    getTiers(),
+  ]);
+
+  // Build the KPI grid. If we have a real KPI row, use it; otherwise the
+  // preview content above.
+  const kpiCards = kpis
+    ? [
+        { label: "Total Points", value: formatPts(kpis.total_points), delta: "" },
+        { label: "Referrals", value: String(kpis.referral_count), delta: "" },
+        { label: "Badges", value: String(kpis.badge_count), delta: "" },
+        {
+          label: "Next Reward",
+          value: kpis.next_tier?.display_name ?? "Max tier",
+          delta: kpis.points_to_next_tier != null
+            ? `${formatPts(kpis.points_to_next_tier)} to go`
+            : "",
+        },
+      ]
+    : fallbackKpis;
+
+  // Featured offers: prefer DB, fall back to static preview rows.
+  const offers =
+    featured.length > 0
+      ? featured.map((o) => ({
+          title: o.title,
+          tier: `${o.min_tier[0].toUpperCase() + o.min_tier.slice(1)}`,
+          points: o.price_points ? formatPts(o.price_points) : `$${(o.price_cents ?? 0) / 100}`,
+        }))
+      : fallbackOffers;
+
+  // Tier journey card — use real tier + fan's current status if available.
+  const currentTier = (fan?.current_tier ?? "bronze") as TierSlug;
+
   return (
     <div className="min-h-screen bg-midnight">
       <main className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-12 lg:flex-row">
@@ -48,14 +90,14 @@ export default function Home() {
               <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-500/20 text-amber-300">
                 ★
               </span>
-              Fan Momentum
+              {fan?.first_name ? `Welcome back, ${fan.first_name}` : "Fan Momentum"}
             </p>
             <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {kpis.map((kpi) => (
+              {kpiCards.map((kpi) => (
                 <div key={kpi.label} className="rounded-2xl border border-white/10 bg-black/30 p-4">
                   <p className="text-xs uppercase tracking-wide text-white/50">{kpi.label}</p>
                   <p className="mt-2 text-2xl font-semibold">{kpi.value}</p>
-                  <p className="text-sm text-emerald-300">{kpi.delta}</p>
+                  {kpi.delta && <p className="text-sm text-emerald-300">{kpi.delta}</p>}
                 </div>
               ))}
             </div>
@@ -69,9 +111,12 @@ export default function Home() {
                   Keep the momentum going
                 </h2>
               </div>
-              <button className="inline-flex items-center gap-2 rounded-full border border-white/30 px-4 py-2 text-sm font-medium text-white/80">
+              <Link
+                href="/rewards"
+                className="inline-flex items-center gap-2 rounded-full border border-white/30 px-4 py-2 text-sm font-medium text-white/80 hover:bg-white/10"
+              >
                 View Missions <span>➜</span>
-              </button>
+              </Link>
             </div>
             <div className="mt-6 grid gap-4 md:grid-cols-3">
               {journeyCards.map((card) => (
@@ -111,7 +156,12 @@ export default function Home() {
                   <p className="text-xs uppercase tracking-wide text-white/50">{offer.tier}</p>
                   <div className="mt-4 flex items-center justify-between">
                     <span className="text-lg font-semibold text-emerald-300">{offer.points}</span>
-                    <button className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium">Redeem</button>
+                    <Link
+                      href="/marketplace"
+                      className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium"
+                    >
+                      View
+                    </Link>
                   </div>
                 </div>
               ))}
@@ -139,17 +189,35 @@ export default function Home() {
         <aside className="w-full max-w-sm space-y-6">
           <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-amber-400/30 via-black to-aurora/30 p-6 text-white shadow-glass">
             <p className="text-sm uppercase tracking-wide text-white/70">Tier Journey</p>
-            <h3 className="mt-2 text-xl font-semibold">Silver Level · 68% complete</h3>
+            <h3 className="mt-2 text-xl font-semibold">
+              {kpis?.next_tier
+                ? `${tiers.find((t) => t.slug === currentTier)?.display_name ?? "Bronze"} · ${formatPts(
+                    kpis.points_to_next_tier,
+                  )} to ${kpis.next_tier.display_name}`
+                : "Your tier at a glance"}
+            </h3>
             <div className="mt-6 space-y-4">
-              {tiers.map((tier) => (
-                <div key={tier.label} className="flex items-center justify-between rounded-2xl bg-black/30 px-4 py-3">
-                  <span className="flex items-center gap-2 text-sm font-medium">
-                    <span>{tier.icon}</span>
-                    {tier.label}
-                  </span>
-                  <span className="text-xs uppercase tracking-wide text-white/50">{tier.status}</span>
-                </div>
-              ))}
+              {tiers.map((tier) => {
+                const unlocked =
+                  kpis != null && kpis.total_points >= tier.min_points;
+                const isCurrent = tier.slug === currentTier;
+                return (
+                  <div
+                    key={tier.slug}
+                    className={`flex items-center justify-between rounded-2xl px-4 py-3 ${
+                      isCurrent ? "bg-white/15" : "bg-black/30"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      <span>{tierIcon(tier.slug)}</span>
+                      {tier.display_name}
+                    </span>
+                    <span className="text-xs uppercase tracking-wide text-white/50">
+                      {unlocked ? "Unlocked" : `${formatPts(tier.min_points)}`}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </section>
 
