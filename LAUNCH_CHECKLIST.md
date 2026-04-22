@@ -29,5 +29,23 @@ Supabase auth gets a chance to run.
 If either env var is missing, the Basic Auth layer is bypassed and the other
 three layers still enforce protection.
 
+## 🤖 Cron secret for automated event reminders
+
+Phase 3c adds a Vercel Cron that runs every 15 minutes to fire 24h + 1h
+event reminders via SMS + email. The cron endpoint is protected by an
+optional bearer token — set `CRON_SECRET` in Vercel and Vercel Cron
+automatically attaches it to every invocation.
+
+**To enable:**
+
+1. Go to <https://vercel.com/jonas-group/fan-engage/settings/environment-variables>
+2. Add `CRON_SECRET` (pick a long random string)
+3. Redeploy so the cron route picks up the value
+4. Confirm the cron is scheduled: <https://vercel.com/jonas-group/fan-engage/crons>
+   — should list `/api/cron/send-event-reminders` with `*/15 * * * *`
+
+If the secret isn't set the route runs without auth, which is fine for
+dev/preview but a security hole in production.
+
 ## Other launch-time TODOs
 _(Add items here as they come up.)_

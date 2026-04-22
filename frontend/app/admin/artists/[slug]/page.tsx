@@ -4,7 +4,20 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { listEventsForAdmin } from "@/lib/data/artists";
 import { listRsvpsForEvent } from "@/lib/data/events";
 import ArtistEditForm from "./edit-form";
-import { createEventAction, deleteEventAction } from "../actions";
+import {
+  createEventAction,
+  deleteEventAction,
+  sendReminderNowAction,
+} from "../actions";
+
+type ReminderRow = {
+  event_id: string;
+  kind: string;
+  sent_at: string;
+  recipients_sms: number;
+  recipients_email: number;
+  error: string | null;
+};
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +39,22 @@ export default async function AdminArtistEditPage({
   const rsvpListsByEvent = await Promise.all(
     events.map((e) => listRsvpsForEvent(e.id)),
   );
+
+  // Recent reminders for every event on this artist (for status chips)
+  const eventIds = events.map((e) => e.id);
+  const remindersByEvent = new Map<string, ReminderRow[]>();
+  if (eventIds.length > 0) {
+    const { data: reminders } = await admin
+      .from("event_reminders")
+      .select("event_id, kind, sent_at, recipients_sms, recipients_email, error")
+      .in("event_id", eventIds)
+      .order("sent_at", { ascending: false });
+    for (const r of (reminders ?? []) as ReminderRow[]) {
+      const arr = remindersByEvent.get(r.event_id) ?? [];
+      arr.push(r);
+      remindersByEvent.set(r.event_id, arr);
+    }
+  }
 
   const social = (artist.social ?? []) as Array<{ label: string; href: string }>;
   const socialText = social.map((s) => `${s.label}|${s.href}`).join("\n");
@@ -81,6 +110,11 @@ export default async function AdminArtistEditPage({
             const rsvps = rsvpListsByEvent[i] ?? [];
             const atCap =
               e.capacity != null && e.capacity > 0 && rsvps.length >= e.capacity;
+            const reminders = remindersByEvent.get(e.id) ?? [];
+            const rem24 = reminders.find((r) => r.kind === "reminder_24h");
+            const rem1h = reminders.find((r) => r.kind === "reminder_1h");
+            const remindersScheduled =
+              e.starts_at !== null && e.active && new Date(e.starts_at) > new Date();
             return (
               <div key={e.id} className="rounded-2xl bg-black/40 p-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -106,15 +140,31 @@ export default async function AdminArtistEditPage({
                       {rsvps.length}
                       {e.capacity ? ` / ${e.capacity}` : ""} RSVPed
                     </p>
+                    {/* Reminder status */}
+                    {(rem24 || rem1h || remindersScheduled) && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
+                        <ReminderChip label="24h" row={rem24} scheduled={remindersScheduled} />
+                        <ReminderChip label="1h" row={rem1h} scheduled={remindersScheduled} />
+                      </div>
+                    )}
                     {e.url && <p className="mt-1 text-[10px] text-white/50 truncate">{e.url}</p>}
                   </div>
-                  <form action={deleteEventAction}>
-                    <input type="hidden" name="event_id" value={e.id} />
-                    <input type="hidden" name="artist_slug" value={slug} />
-                    <button className="text-xs text-rose-300/80 hover:text-rose-300">
-                      Delete
-                    </button>
-                  </form>
+                  <div className="flex flex-col items-end gap-1">
+                    <form action={sendReminderNowAction}>
+                      <input type="hidden" name="event_id" value={e.id} />
+                      <input type="hidden" name="artist_slug" value={slug} />
+                      <button className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/80 hover:bg-white/20">
+                        📣 Send reminder now
+                      </button>
+                    </form>
+                    <form action={deleteEventAction}>
+                      <input type="hidden" name="event_id" value={e.id} />
+                      <input type="hidden" name="artist_slug" value={slug} />
+                      <button className="text-xs text-rose-300/80 hover:text-rose-300">
+                        Delete
+                      </button>
+                    </form>
+                  </div>
                 </div>
                 {rsvps.length > 0 && (
                   <details className="mt-2">
@@ -207,5 +257,36 @@ export default async function AdminArtistEditPage({
         </form>
       </section>
     </div>
+  );
+}
+
+function ReminderChip({
+  label,
+  row,
+  scheduled,
+}: {
+  label: string;
+  row: ReminderRow | undefined;
+  scheduled: boolean;
+}) {
+  if (row) {
+    if (row.error) {
+      return (
+        <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] text-rose-200">
+          {label}: failed · {row.error.slice(0, 40)}
+        </span>
+      );
+    }
+    return (
+      <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-200">
+        {label}: ✓ sent · {row.recipients_sms} sms · {row.recipients_email} email
+      </span>
+    );
+  }
+  if (!scheduled) return null;
+  return (
+    <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/60">
+      {label}: scheduled
+    </span>
   );
 }

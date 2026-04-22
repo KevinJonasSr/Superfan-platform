@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAdminUser } from "@/lib/admin";
+import { sendEventReminder, type ReminderWindowEvent } from "@/lib/reminders";
 
 async function requireAdmin() {
   const admin = await getAdminUser();
@@ -107,6 +108,39 @@ export async function createEventAction(formData: FormData) {
   });
   revalidatePath(`/admin/artists/${artistSlug}`);
   revalidatePath(`/artists/${artistSlug}`);
+}
+
+export async function sendReminderNowAction(formData: FormData) {
+  await requireAdmin();
+  const eventId = String(formData.get("event_id") ?? "").trim();
+  const artistSlug = String(formData.get("artist_slug") ?? "").trim();
+  if (!eventId || !artistSlug) return;
+
+  const supa = createAdminClient();
+  const [{ data: event }, { data: artist }] = await Promise.all([
+    supa
+      .from("artist_events")
+      .select("id, artist_slug, title, detail, starts_at, location, url, reminder_sms_template")
+      .eq("id", eventId)
+      .maybeSingle(),
+    supa.from("artists").select("name").eq("slug", artistSlug).maybeSingle(),
+  ]);
+  if (!event) return;
+
+  const reminderEvent: ReminderWindowEvent = {
+    id: event.id as string,
+    artist_slug: event.artist_slug as string,
+    title: event.title as string,
+    detail: (event.detail as string | null) ?? null,
+    starts_at: (event.starts_at as string) ?? new Date().toISOString(),
+    location: (event.location as string | null) ?? null,
+    url: (event.url as string | null) ?? null,
+    reminder_sms_template: (event.reminder_sms_template as string | null) ?? null,
+    artist_name: (artist?.name as string | null) ?? null,
+  };
+
+  await sendEventReminder(reminderEvent, "manual");
+  revalidatePath(`/admin/artists/${artistSlug}`);
 }
 
 export async function deleteEventAction(formData: FormData) {
