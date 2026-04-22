@@ -86,6 +86,22 @@ export default function OnboardingWizard() {
 
       setSmsStatus("success");
       setSmsMessage("Confirmation text delivered. Fan is live in the journey.");
+
+      // Fire-and-forget Mailchimp subscribe — don't block the SMS success path
+      // if Mailchimp isn't configured yet or the audience ID is missing.
+      if (formState.email) {
+        fetch("/api/fan-engage/mailchimp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: formState.email,
+            firstName: formState.firstName,
+            tags: formState.interest ? [formState.interest] : undefined,
+          }),
+        }).catch((err) => {
+          console.warn("Mailchimp subscribe did not complete:", err);
+        });
+      }
     } catch (error) {
       console.error(error);
       setSmsStatus("error");

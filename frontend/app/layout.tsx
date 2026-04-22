@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
+import { createClient } from "@/lib/supabase/server";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-body" });
 const spaceGrotesk = Space_Grotesk({
@@ -20,14 +21,30 @@ const navItems = [
   { href: "/rewards", label: "Rewards" },
   { href: "/marketplace", label: "Marketplace" },
   { href: "/referrals", label: "Referrals" },
-  { href: "/onboarding", label: "Onboarding" },
 ];
 
-export default function RootLayout({
+/**
+ * Tries to fetch the current user via the Supabase server client. If Supabase
+ * isn't configured yet (env vars missing) we degrade gracefully and render the
+ * signed-out header — the site still works end-to-end.
+ */
+async function getCurrentUserSafe() {
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase.auth.getUser();
+    return data.user;
+  } catch {
+    return null;
+  }
+}
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const user = await getCurrentUserSafe();
+
   return (
     <html
       lang="en"
@@ -58,12 +75,31 @@ export default function RootLayout({
                 </Link>
               ))}
             </nav>
-            <Link
-              href="/onboarding"
-              className="rounded-full bg-gradient-to-r from-aurora to-ember px-4 py-2 text-sm font-semibold text-white shadow-glass"
-            >
-              Join
-            </Link>
+            {user ? (
+              <form action="/auth/signout" method="post">
+                <button
+                  type="submit"
+                  className="rounded-full border border-white/20 px-4 py-2 text-sm font-medium text-white/80 hover:bg-white/10"
+                >
+                  Sign out
+                </button>
+              </form>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/login"
+                  className="hidden rounded-full border border-white/20 px-4 py-2 text-sm font-medium text-white/80 hover:bg-white/10 sm:inline-flex"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/onboarding"
+                  className="rounded-full bg-gradient-to-r from-aurora to-ember px-4 py-2 text-sm font-semibold text-white shadow-glass"
+                >
+                  Join
+                </Link>
+              </div>
+            )}
           </div>
         </header>
         {children}
