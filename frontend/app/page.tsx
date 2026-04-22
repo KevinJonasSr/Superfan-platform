@@ -3,35 +3,22 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import FanHomeDashboard from "@/components/fan-home-dashboard";
 import InviteQRCode from "@/components/invite-qr";
+import SignedOutLanding from "@/components/signed-out-landing";
+import { listArtistsFromDb } from "@/lib/data/artists";
 import { getCurrentFan, getCurrentFanKpis } from "@/lib/data/fan";
 import { getFanHomeData } from "@/lib/data/fan-home";
 import { getFeaturedOffers } from "@/lib/data/offers";
 import { getTiers, tierIcon } from "@/lib/data/tiers";
 import type { TierSlug } from "@/lib/data/types";
 
-// ─── Static preview content (shown when the viewer isn't signed in) ────────
-const fallbackKpis = [
-  { label: "Total Points", value: "12,450", delta: "+320 today" },
-  { label: "Referrals", value: "38", delta: "+4 this week" },
-  { label: "Badges", value: "12", delta: "2 new" },
-  { label: "Next Reward", value: "VIP Soundcheck", delta: "Unlocks at 15k" },
-];
+// ─── Signed-in dashboard content ──────────────────────────────────────────
+// Signed-out visitors render <SignedOutLanding/> earlier and never see any
+// of this.
 
 const journeyCards = [
   { title: "Complete Backstage Challenge", points: "+250 pts" },
   { title: "Share Your Listening Story", points: "+150 pts" },
   { title: "Vote in Today’s Poll", points: "+75 pts" },
-];
-
-const events = [
-  { title: "Austin Listening Party", detail: "RSVP closes in 12h", date: "Apr 02" },
-  { title: "NYC Soundcheck", detail: "VIP access only", date: "Apr 07" },
-];
-
-const fallbackOffers = [
-  { title: "Signed Vinyl + Poster", tier: "Gold Exclusive", points: "4,500 pts" },
-  { title: "Backstage Experience", tier: "Platinum Drop", points: "10,000 pts" },
-  { title: "Limited Hoodie", tier: "Silver Priority", points: "3,200 pts" },
 ];
 
 const quickActions: { label: string; href: string }[] = [
@@ -59,55 +46,65 @@ export default async function Home({
     redirect(`/auth/callback?code=${encodeURIComponent(params.code)}&next=/onboarding`);
   }
 
-  // Kick off all queries in parallel. They each gracefully return
-  // null / empty on any error, so the page never breaks.
-  const [fan, kpis, featured, tiers, fanHome] = await Promise.all([
-    getCurrentFan(),
+  // First pass: just fetch the fan. If signed-out, render the marketing
+  // landing and skip all the signed-in data queries (they're noise here).
+  const fan = await getCurrentFan();
+  const isSignedIn = fan !== null;
+
+  if (!isSignedIn) {
+    const artists = await listArtistsFromDb();
+    return <SignedOutLanding artists={artists} />;
+  }
+
+  // Signed-in path — parallel-fetch everything the dashboard needs. Each
+  // gracefully returns null / empty on error so the page never breaks.
+  const [kpis, featured, tiers, fanHome] = await Promise.all([
     getCurrentFanKpis(),
     getFeaturedOffers(3),
     getTiers(),
     getFanHomeData(),
   ]);
 
-  // Build the KPI grid. If we have a real KPI row, use it; otherwise the
-  // preview content above.
-  const kpiCards = kpis
-    ? [
-        {
-          label: "Total Points",
-          value: new Intl.NumberFormat("en-US").format(kpis.total_points),
-          delta: "",
-        },
-        { label: "Referrals", value: String(kpis.referral_count), delta: "" },
-        { label: "Badges", value: String(kpis.badge_count), delta: "" },
-        {
-          label: "Next Reward",
-          value: kpis.next_tier?.display_name ?? "Max tier",
-          delta:
-            kpis.points_to_next_tier != null
-              ? `${formatPts(kpis.points_to_next_tier)} to go`
-              : "",
-        },
-      ]
-    : fallbackKpis;
+  // KPI grid — real data from Supabase. If kpis is null (DB hiccup), we
+  // render zeros rather than fake marketing numbers so nothing ever lies.
+  const kpiCards = [
+    {
+      label: "Total Points",
+      value: kpis
+        ? new Intl.NumberFormat("en-US").format(kpis.total_points)
+        : "0",
+      delta: "",
+    },
+    {
+      label: "Referrals",
+      value: String(kpis?.referral_count ?? 0),
+      delta: "",
+    },
+    {
+      label: "Badges",
+      value: String(kpis?.badge_count ?? 0),
+      delta: "",
+    },
+    {
+      label: "Next Reward",
+      value: kpis?.next_tier?.display_name ?? "Max tier",
+      delta:
+        kpis?.points_to_next_tier != null
+          ? `${formatPts(kpis.points_to_next_tier)} to go`
+          : "",
+    },
+  ];
 
   // Show a "Finish profile" nudge when signed-in users have no first_name yet.
-  const needsProfile = fan !== null && !fan.first_name;
-  const isSignedIn = fan !== null;
+  const needsProfile = !fan.first_name;
 
-  // Featured offers: DB when signed-in (empty state if none), static preview
-  // for signed-out visitors only. Stops fake "4,500 pts Signed Vinyl" from
-  // appearing as if it's real inventory.
-  const offers =
-    featured.length > 0
-      ? featured.map((o) => ({
-          title: o.title,
-          tier: `${o.min_tier[0].toUpperCase() + o.min_tier.slice(1)}`,
-          points: o.price_points ? formatPts(o.price_points) : `$${(o.price_cents ?? 0) / 100}`,
-        }))
-      : isSignedIn
-        ? []
-        : fallbackOffers;
+  // Featured offers: DB only — no more fallback/lie content now that this
+  // branch is signed-in-only.
+  const offers = featured.map((o) => ({
+    title: o.title,
+    tier: `${o.min_tier[0].toUpperCase() + o.min_tier.slice(1)}`,
+    points: o.price_points ? formatPts(o.price_points) : `$${(o.price_cents ?? 0) / 100}`,
+  }));
 
   // Tier journey card — use real tier + fan's current status if available.
   const currentTier = (fan?.current_tier ?? "bronze") as TierSlug;
@@ -143,12 +140,10 @@ export default async function Home({
               </Link>
             </section>
           )}
-          {/* Personalized Fan Home dashboard — only for signed-in fans with a
-              finished profile. Falls through to the static preview content
-              below otherwise. */}
-          {isSignedIn && !needsProfile && fanHome && (
-            <FanHomeDashboard data={fanHome} />
-          )}
+          {/* Personalized Fan Home dashboard — only for fans past
+              onboarding. Still signed-in, so the marketing landing never
+              appears here. */}
+          {!needsProfile && fanHome && <FanHomeDashboard data={fanHome} />}
           <section className="glass-card p-6">
             <p className="flex items-center gap-2 text-sm uppercase tracking-wide text-white/60">
               <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-500/20 text-amber-300">
@@ -200,24 +195,9 @@ export default async function Home({
               <p className="flex items-center gap-2 text-sm uppercase tracking-wide text-white/60">
                 <span>📅</span> Upcoming Events
               </p>
-              {isSignedIn ? (
-                <div className="rounded-2xl border border-dashed border-white/15 bg-black/20 p-6 text-center text-xs text-white/60">
-                  No events scheduled yet. Artist drops and listening parties will show here.
-                </div>
-              ) : (
-                events.map((event) => (
-                  <div
-                    key={event.title}
-                    className="flex items-center justify-between rounded-2xl bg-black/30 p-4"
-                  >
-                    <div>
-                      <p className="text-sm font-semibold">{event.title}</p>
-                      <p className="text-xs text-white/60">{event.detail}</p>
-                    </div>
-                    <span className="text-sm font-medium text-white/70">{event.date}</span>
-                  </div>
-                ))
-              )}
+              <div className="rounded-2xl border border-dashed border-white/15 bg-black/20 p-6 text-center text-xs text-white/60">
+                No events scheduled yet. Artist drops and listening parties will show here.
+              </div>
             </div>
             <div className="glass-card space-y-4 p-6">
               <p className="flex items-center gap-2 text-sm uppercase tracking-wide text-white/60">
@@ -302,7 +282,7 @@ export default async function Home({
             </div>
           </section>
 
-          {inviteUrl ? (
+          {inviteUrl && (
             <section className="glass-card p-6">
               <p className="text-sm uppercase tracking-wide text-white/60">Your invite</p>
               <p className="mt-2 text-xs text-white/60">
@@ -318,20 +298,7 @@ export default async function Home({
                 Open referrals →
               </Link>
             </section>
-          ) : !isSignedIn ? (
-            <section className="glass-card p-6">
-              <p className="text-sm uppercase tracking-wide text-white/60">Your invite</p>
-              <p className="mt-2 text-xs text-white/60">
-                Create an account to unlock your personal referral QR code and earn points for every friend who joins.
-              </p>
-              <Link
-                href="/signup"
-                className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-aurora to-ember px-4 py-2 text-sm font-semibold text-white shadow-glass transition hover:brightness-110"
-              >
-                Create account
-              </Link>
-            </section>
-          ) : null}
+          )}
         </aside>
       </main>
     </div>

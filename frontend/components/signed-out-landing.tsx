@@ -1,0 +1,319 @@
+import Link from "next/link";
+import type { Artist } from "@/lib/artists";
+
+/**
+ * Public-facing marketing landing rendered at `/` for signed-out visitors.
+ *
+ * Structured like the funnel we actually want: big hero with a single primary
+ * CTA, then progressive disclosure (how-it-works → feature pillars → featured
+ * artists → closing CTA). Signed-in fans never see this — they hit the
+ * personalized Fan Home dashboard from Phase 3e instead.
+ */
+export default function SignedOutLanding({ artists }: { artists: Artist[] }) {
+  const featured = artists.slice(0, 5);
+
+  return (
+    <main className="overflow-hidden">
+      {/* ─── Hero ─────────────────────────────────────────────────────────── */}
+      <section className="relative border-b border-white/5">
+        {/* Soft aurora glow behind the hero */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 overflow-hidden"
+        >
+          <div className="absolute -top-24 left-1/2 h-[420px] w-[820px] -translate-x-1/2 rounded-full bg-gradient-to-br from-aurora/40 via-ember/20 to-transparent blur-3xl" />
+        </div>
+
+        <div className="relative mx-auto grid max-w-6xl gap-10 px-6 py-20 lg:grid-cols-[1.15fr_1fr] lg:py-28">
+          <div className="flex flex-col justify-center">
+            <p className="mb-5 inline-flex w-fit items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs uppercase tracking-widest text-white/70">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              The superfan platform
+            </p>
+            <h1
+              className="text-5xl font-semibold leading-[1.05] md:text-6xl"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              Your favorite artists.
+              <br />
+              <span className="bg-gradient-to-r from-aurora via-fuchsia-400 to-ember bg-clip-text text-transparent">
+                Your front-row seat.
+              </span>
+            </h1>
+            <p className="mt-6 max-w-xl text-lg text-white/70">
+              Follow the artists you love, earn points for every fan move, and
+              unlock real drops — signed vinyl, backstage access, listening
+              parties. Built for the fans who actually show up.
+            </p>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <Link
+                href="/onboarding"
+                className="rounded-full bg-gradient-to-r from-aurora to-ember px-6 py-3 text-sm font-semibold text-white shadow-glass transition hover:brightness-110"
+              >
+                Create your fan profile →
+              </Link>
+              <Link
+                href="/login"
+                className="rounded-full border border-white/20 px-5 py-3 text-sm font-medium text-white/80 hover:bg-white/10"
+              >
+                Sign in
+              </Link>
+            </div>
+            <p className="mt-4 text-xs text-white/50">
+              Free · 60 seconds · No credit card
+            </p>
+          </div>
+
+          {/* Hero visual — stylized preview card stack */}
+          <div className="relative hidden lg:block">
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="relative h-[440px] w-[360px]">
+                {/* Back card */}
+                <div className="absolute left-8 top-12 h-[380px] w-[320px] rotate-3 rounded-3xl border border-white/10 bg-gradient-to-br from-ember/25 via-slate-900 to-aurora/25 shadow-glass">
+                  <div className="p-6 text-white/70">
+                    <p className="text-[10px] uppercase tracking-widest">
+                      Next Event
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-white">
+                      Nashville Listening Party
+                    </p>
+                    <p className="mt-1 text-xs text-white/60">
+                      Thu · 8pm · +25 pts for RSVP
+                    </p>
+                  </div>
+                </div>
+                {/* Front card */}
+                <div className="absolute left-0 top-0 h-[380px] w-[320px] -rotate-2 rounded-3xl border border-white/10 bg-gradient-to-br from-aurora/40 via-slate-900 to-black p-6 shadow-glass">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] uppercase tracking-widest text-white/60">
+                      Fan Profile
+                    </p>
+                    <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/80">
+                      Gold tier
+                    </span>
+                  </div>
+                  <p
+                    className="mt-6 text-4xl font-semibold text-white"
+                    style={{ fontFamily: "var(--font-display)" }}
+                  >
+                    11,420
+                  </p>
+                  <p className="text-xs text-white/50">total points</p>
+                  <div className="mt-6 space-y-2">
+                    <div className="flex items-center justify-between rounded-xl bg-black/30 px-3 py-2 text-xs">
+                      <span>🏆 Challenge crasher</span>
+                      <span className="text-emerald-300">+250</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-xl bg-black/30 px-3 py-2 text-xs">
+                      <span>🎟️ Austin Listening Party</span>
+                      <span className="text-emerald-300">+25</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-xl bg-black/30 px-3 py-2 text-xs">
+                      <span>🤝 Invited 3 friends</span>
+                      <span className="text-emerald-300">+450</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── How it works ─────────────────────────────────────────────────── */}
+      <section className="mx-auto max-w-6xl px-6 py-20">
+        <p className="text-xs uppercase tracking-widest text-white/50">
+          How it works
+        </p>
+        <h2
+          className="mt-2 max-w-2xl text-3xl font-semibold md:text-4xl"
+          style={{ fontFamily: "var(--font-display)" }}
+        >
+          Three steps from lurker to superfan.
+        </h2>
+        <div className="mt-12 grid gap-6 md:grid-cols-3">
+          {[
+            {
+              n: "01",
+              title: "Follow your artists",
+              body: "Pick the artists you love. You'll get their drops, events, polls, and challenges in one feed.",
+              icon: "🎧",
+            },
+            {
+              n: "02",
+              title: "Earn points for every fan move",
+              body: "RSVPing an event, voting in a poll, commenting, sharing your referral code — all of it earns points.",
+              icon: "⚡",
+            },
+            {
+              n: "03",
+              title: "Unlock real drops + access",
+              body: "Signed vinyl, backstage soundchecks, VIP listening parties, limited merch. Points cash in for the real thing.",
+              icon: "🎁",
+            },
+          ].map((step) => (
+            <div
+              key={step.n}
+              className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 to-transparent p-6"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono text-white/40">
+                  {step.n}
+                </span>
+                <span className="text-3xl">{step.icon}</span>
+              </div>
+              <h3 className="mt-6 text-lg font-semibold">{step.title}</h3>
+              <p className="mt-2 text-sm text-white/65">{step.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ─── Feature pillars ──────────────────────────────────────────────── */}
+      <section className="border-y border-white/5 bg-black/20">
+        <div className="mx-auto max-w-6xl px-6 py-20">
+          <div className="grid gap-8 md:grid-cols-2">
+            <div>
+              <p className="text-xs uppercase tracking-widest text-white/50">
+                What you get
+              </p>
+              <h2
+                className="mt-2 text-3xl font-semibold md:text-4xl"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                More than a mailing list.
+                <br />
+                A real fan club.
+              </h2>
+              <p className="mt-6 max-w-md text-white/70">
+                Everything in one place — events, community, rewards, and the
+                stuff the casuals never see.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {[
+                {
+                  title: "Tier Journey",
+                  body: "Bronze → Silver → Gold → Platinum. Every action moves you up.",
+                  icon: "🏅",
+                },
+                {
+                  title: "Community Hub",
+                  body: "Posts, polls, challenges — per artist, moderated, never spam.",
+                  icon: "💬",
+                },
+                {
+                  title: "Event RSVPs",
+                  body: "Capacity-limited listening parties, soundchecks, meet-ups. Reminders included.",
+                  icon: "🎟️",
+                },
+                {
+                  title: "Rewards Marketplace",
+                  body: "Redeem points for signed gear, backstage access, or merch exclusives.",
+                  icon: "🎁",
+                },
+              ].map((f) => (
+                <div
+                  key={f.title}
+                  className="rounded-2xl border border-white/10 bg-black/30 p-5"
+                >
+                  <p className="text-2xl">{f.icon}</p>
+                  <h3 className="mt-3 font-semibold">{f.title}</h3>
+                  <p className="mt-1 text-xs text-white/60">{f.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Featured artists ─────────────────────────────────────────────── */}
+      {featured.length > 0 && (
+        <section className="mx-auto max-w-6xl px-6 py-20">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-widest text-white/50">
+                Featured artists
+              </p>
+              <h2
+                className="mt-2 text-3xl font-semibold md:text-4xl"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                Already on Fan Engage.
+              </h2>
+            </div>
+            <Link
+              href="/artists"
+              className="hidden items-center gap-1 text-sm font-medium text-white/70 hover:text-white sm:inline-flex"
+            >
+              See all →
+            </Link>
+          </div>
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {featured.map((a) => (
+              <Link
+                key={a.slug}
+                href={`/artists/${a.slug}`}
+                className="group relative overflow-hidden rounded-2xl border border-white/10 bg-black/30 p-5 transition hover:border-white/25 hover:bg-white/5"
+              >
+                <div
+                  aria-hidden
+                  className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r opacity-80"
+                  style={{
+                    backgroundImage: `linear-gradient(90deg, ${a.accentFrom}, ${a.accentTo})`,
+                  }}
+                />
+                <p className="mt-2 text-base font-semibold">{a.name}</p>
+                {a.tagline && (
+                  <p className="mt-1 text-xs text-white/55 line-clamp-2">
+                    {a.tagline}
+                  </p>
+                )}
+                <p className="mt-4 text-xs text-white/50 transition group-hover:text-white/80">
+                  Visit page →
+                </p>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ─── Closing CTA ──────────────────────────────────────────────────── */}
+      <section className="mx-auto max-w-6xl px-6 py-24">
+        <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-aurora/25 via-slate-900 to-ember/25 p-10 text-center shadow-glass md:p-16">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(600px_circle_at_50%_-20%,rgba(124,58,237,0.35),transparent)]"
+          />
+          <p className="relative text-xs uppercase tracking-widest text-white/60">
+            Ready to earn your first 100 points?
+          </p>
+          <h2
+            className="relative mt-3 text-3xl font-semibold md:text-4xl"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Join free in under a minute.
+          </h2>
+          <p className="relative mt-4 text-white/70">
+            No credit card. No spam. Just your favorite artists and the perks
+            they reserve for real fans.
+          </p>
+          <div className="relative mt-8 flex flex-wrap items-center justify-center gap-3">
+            <Link
+              href="/onboarding"
+              className="rounded-full bg-gradient-to-r from-aurora to-ember px-6 py-3 text-sm font-semibold text-white shadow-glass transition hover:brightness-110"
+            >
+              Create fan profile →
+            </Link>
+            <Link
+              href="/artists"
+              className="rounded-full border border-white/25 px-5 py-3 text-sm font-medium text-white/80 hover:bg-white/10"
+            >
+              Browse artists
+            </Link>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}

@@ -15,15 +15,52 @@ const spaceGrotesk = Space_Grotesk({
   variable: "--font-display",
 });
 
+const appUrl =
+  process.env.NEXT_PUBLIC_APP_URL ?? "https://fan-engage-pearl.vercel.app";
+
 export const metadata: Metadata = {
-  title: "Fan Engage",
-  description: "The superfan platform — rewards, marketplace, referrals, and more.",
+  metadataBase: new URL(appUrl),
+  title: {
+    default: "Fan Engage — your front-row seat",
+    template: "%s · Fan Engage",
+  },
+  description:
+    "The superfan platform. Follow artists, earn points for every fan move, and unlock real drops — signed vinyl, backstage access, listening parties.",
+  applicationName: "Fan Engage",
+  keywords: [
+    "superfan",
+    "fan club",
+    "artist community",
+    "fan rewards",
+    "listening party",
+    "VIP access",
+  ],
   manifest: "/manifest.json",
   themeColor: "#7c3aed",
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: "Fan Engage",
+    title: "Fan Engage — your front-row seat",
+    description:
+      "Follow artists, earn points, unlock real drops. The superfan platform built for fans who actually show up.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Fan Engage — your front-row seat",
+    description:
+      "Follow artists, earn points, unlock real drops. Built for the fans who actually show up.",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "Fan Engage",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true },
   },
 };
 
