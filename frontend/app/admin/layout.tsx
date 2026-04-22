@@ -4,6 +4,7 @@ import { getAdminUser } from "@/lib/admin";
 
 const adminNav = [
   { href: "/admin", label: "Overview" },
+  { href: "/admin/artists", label: "Artists" },
   { href: "/admin/campaigns", label: "Campaigns" },
   { href: "/admin/community", label: "Community" },
   { href: "/admin/challenges", label: "Challenges" },

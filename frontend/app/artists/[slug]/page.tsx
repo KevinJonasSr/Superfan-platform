@@ -1,10 +1,19 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getArtist, listArtists } from "@/lib/artists";
+import { listArtists } from "@/lib/artists";
+import {
+  doesFanFollowArtist,
+  getArtistFromDb,
+} from "@/lib/data/artists";
 import { getCurrentFan } from "@/lib/data/fan";
+import FollowButton from "./follow-button";
+
+export const dynamic = "force-dynamic";
 
 export async function generateStaticParams() {
+  // Static-params still uses the hardcoded list so builds don't need DB creds.
+  // Runtime queries the DB and falls back to the same map on error.
   return listArtists().map((a) => ({ slug: a.slug }));
 }
 
@@ -12,7 +21,7 @@ export async function generateMetadata(
   { params }: { params: Promise<{ slug: string }> },
 ): Promise<Metadata> {
   const { slug } = await params;
-  const artist = getArtist(slug);
+  const artist = await getArtistFromDb(slug);
   if (!artist) return { title: "Artist · Fan Engage" };
   return {
     title: `${artist.name} · Fan Engage`,
@@ -26,10 +35,12 @@ export default async function ArtistPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const artist = getArtist(slug);
+  const [artist, fan, isFollowing] = await Promise.all([
+    getArtistFromDb(slug),
+    getCurrentFan(),
+    doesFanFollowArtist(slug),
+  ]);
   if (!artist) notFound();
-
-  const fan = await getCurrentFan();
   const isSignedIn = fan !== null;
   const needsProfile = isSignedIn && !fan.first_name;
 
@@ -75,6 +86,9 @@ export default async function ArtistPage({
           >
             {primaryCta.label}
           </Link>
+          {isSignedIn && (
+            <FollowButton artistSlug={artist.slug} initialFollowing={isFollowing} />
+          )}
           <Link
             href={`/artists/${slug}/community`}
             className="rounded-full border border-white/30 px-6 py-3 text-sm font-medium text-white/80 hover:bg-white/10"

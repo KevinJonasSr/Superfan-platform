@@ -22,18 +22,29 @@ async function loadRecipients(opts: {
   const optColumn = opts.channel === "email" ? "email_opted_in" : "sms_opted_in";
   const contactColumn = opts.channel === "email" ? "email" : "phone";
 
-  // Artist-scoped audience is a placeholder: we don't have a
-  // fan_artist_following join yet, so "artist-scoped" currently means
-  // "every opted-in fan of the platform". When the follow table lands we
-  // filter by it here.
-  void opts.artistSlug;
+  // If an artist_slug is provided, restrict recipients to fans who follow
+  // that artist (via fan_artist_following). Otherwise every opted-in fan
+  // gets the blast (useful for platform-wide announcements).
+  let followerIds: string[] | null = null;
+  if (opts.artistSlug) {
+    const { data: follows } = await admin
+      .from("fan_artist_following")
+      .select("fan_id")
+      .eq("artist_slug", opts.artistSlug);
+    followerIds = (follows ?? []).map((f) => f.fan_id as string);
+    if (followerIds.length === 0) return [];
+  }
 
-  const { data, error } = await admin
+  let query = admin
     .from("fans")
     .select("id, first_name, email, phone, sms_opted_in, email_opted_in, suspended")
     .eq(optColumn, true)
     .eq("suspended", false)
     .not(contactColumn, "is", null);
+
+  if (followerIds) query = query.in("id", followerIds);
+
+  const { data, error } = await query;
 
   if (error) throw error;
   return (data ?? []) as Array<{

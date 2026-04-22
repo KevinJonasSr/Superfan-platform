@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getArtist, listArtists } from "@/lib/artists";
+import { listArtists } from "@/lib/artists";
+import { getArtistFromDb } from "@/lib/data/artists";
 import { getAdminUser } from "@/lib/admin";
 import { getCurrentFan } from "@/lib/data/fan";
 import { getActiveFanActionsForArtist } from "@/lib/data/campaigns";
@@ -25,7 +26,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const artist = getArtist(slug);
+  const artist = await getArtistFromDb(slug);
   if (!artist) return { title: "Community · Fan Engage" };
   return { title: `${artist.name} Community · Fan Engage` };
 }
@@ -36,7 +37,7 @@ export default async function ArtistCommunityPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const artist = getArtist(slug);
+  const artist = await getArtistFromDb(slug);
   if (!artist) notFound();
 
   const [fan, posts, adminUser, fanActions] = await Promise.all([

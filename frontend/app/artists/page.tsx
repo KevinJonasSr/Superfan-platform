@@ -1,12 +1,14 @@
 import Link from "next/link";
-import { listArtists } from "@/lib/artists";
+import { listArtistsFromDb } from "@/lib/data/artists";
 
 export const metadata = {
   title: "Artists · Fan Engage",
 };
 
-export default function ArtistsIndexPage() {
-  const artists = listArtists();
+export const dynamic = "force-dynamic";
+
+export default async function ArtistsIndexPage() {
+  const artists = await listArtistsFromDb();
   return (
     <main className="mx-auto max-w-6xl space-y-6 px-6 py-12">
       <header className="space-y-2">

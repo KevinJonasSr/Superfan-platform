@@ -1,10 +1,10 @@
-import { listArtists } from "@/lib/artists";
+import { listArtistsFromDb } from "@/lib/data/artists";
 import CampaignBuilder from "./builder";
 
 export const dynamic = "force-dynamic";
 
-export default function NewCampaignPage() {
-  const artists = listArtists();
+export default async function NewCampaignPage() {
+  const artists = await listArtistsFromDb();
   return (
     <div className="space-y-6">
       <div>
