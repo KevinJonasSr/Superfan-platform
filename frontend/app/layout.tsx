@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
+import CookieBanner from "@/components/cookie-banner";
+import Footer from "@/components/footer";
 import { createClient } from "@/lib/supabase/server";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-body" });
@@ -137,6 +139,8 @@ export default async function RootLayout({
           </div>
         </header>
         {children}
+        <Footer />
+        <CookieBanner />
       </body>
     </html>
   );

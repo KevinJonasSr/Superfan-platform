@@ -92,13 +92,19 @@ export async function broadcastSms(params: {
   const { default: twilio } = await import("twilio");
   const client = twilio(accountSid, authToken);
 
+  // Append the carrier-required STOP footer once per message. Twilio also
+  // handles STOP automatically, but the explicit footer keeps us in good
+  // standing with US carriers (10DLC compliance).
+  const smsBody =
+    params.body + (params.body.toUpperCase().includes("STOP") ? "" : " Reply STOP to opt out.");
+
   for (const fan of recipients) {
     if (!fan.phone) continue;
     result.attempted += 1;
     try {
       await client.messages.create({
         to: fan.phone,
-        body: params.body,
+        body: smsBody,
         ...(messagingServiceSid
           ? { messagingServiceSid }
           : { from: defaultFrom as string }),
@@ -180,7 +186,11 @@ export async function broadcastEmail(params: {
         html: `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;line-height:1.5;color:#0f172a">
 <h2 style="margin:0 0 16px;font-size:22px">${escapeHtml(params.subject)}</h2>
 <div style="white-space:pre-wrap">${escapeHtml(params.body)}</div>
-<p style="margin-top:32px;font-size:12px;color:#64748b">Sent via Fan Engage · <a href="*|UNSUB|*" style="color:#64748b">Unsubscribe</a></p>
+<p style="margin-top:32px;font-size:12px;color:#64748b">
+  Sent via Fan Engage ·
+  <a href="*|UNSUB|*" style="color:#64748b">Unsubscribe from Mailchimp</a> ·
+  <a href="${process.env.NEXT_PUBLIC_APP_URL ?? "https://fan-engage-pearl.vercel.app"}/unsubscribe?token=*|MERGE:UNSUB_TOKEN|*" style="color:#64748b">Unsubscribe from Fan Engage</a>
+</p>
 </body></html>`,
       }),
     });

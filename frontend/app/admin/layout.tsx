@@ -11,6 +11,7 @@ const adminNav = [
   { href: "/admin/offers", label: "Offers" },
   { href: "/admin/fans", label: "Fans" },
   { href: "/admin/analytics", label: "Analytics" },
+  { href: "/admin/policies", label: "Policies" },
 ];
 
 export default async function AdminLayout({

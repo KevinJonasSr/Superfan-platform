@@ -15,6 +15,8 @@ type OnboardPayload = {
   referralCode?: string; // optional — the ref code that was passed in the invite link
   smsOptedIn?: boolean;
   emailOptedIn?: boolean;
+  consentAcceptedAt?: string;
+  consentVersion?: string;
 };
 
 /**
@@ -49,6 +51,8 @@ export async function POST(request: Request) {
         interest: payload.interest ?? null,
         sms_opted_in: Boolean(payload.smsOptedIn),
         email_opted_in: Boolean(payload.emailOptedIn),
+        consent_accepted_at: payload.consentAcceptedAt ?? new Date().toISOString(),
+        consent_version: payload.consentVersion ?? null,
       })
       .eq("id", user.id)
       .select()

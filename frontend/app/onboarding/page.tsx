@@ -52,6 +52,8 @@ export default function OnboardingWizard() {
   const [smsStatus, setSmsStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [smsMessage, setSmsMessage] = useState("Ready to send the confirmation text.");
   const [finishStatus, setFinishStatus] = useState<"idle" | "saving" | "error">("idle");
+  const [tosConsent, setTosConsent] = useState(false);
+  const [smsConsent, setSmsConsent] = useState(false);
 
   const currentStep = steps[stepIndex];
   const progress = useMemo(() => ((stepIndex + 1) / steps.length) * 100, [stepIndex]);
@@ -173,8 +175,10 @@ export default function OnboardingWizard() {
           favoriteSong: formState.favoriteSong,
           interest: formState.interest,
           referralCode: refCode,
-          smsOptedIn: Boolean(formState.phone),
+          smsOptedIn: Boolean(formState.phone) && smsConsent,
           emailOptedIn: Boolean(formState.email),
+          consentAcceptedAt: new Date().toISOString(),
+          consentVersion: "2026-04-22.v1",
         }),
       });
 
@@ -260,6 +264,54 @@ export default function OnboardingWizard() {
               ))}
             </div>
 
+            {isLastStep && (
+              <div className="space-y-2 rounded-2xl bg-black/30 p-4 text-xs text-white/75">
+                <label className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={tosConsent}
+                    onChange={(e) => setTosConsent(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-aurora"
+                  />
+                  <span>
+                    I agree to the{" "}
+                    <a
+                      href="/terms"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-aurora underline"
+                    >
+                      Terms of Service
+                    </a>{" "}
+                    and{" "}
+                    <a
+                      href="/privacy"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-aurora underline"
+                    >
+                      Privacy Policy
+                    </a>
+                    .
+                  </span>
+                </label>
+                {formState.phone && (
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      checked={smsConsent}
+                      onChange={(e) => setSmsConsent(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 accent-aurora"
+                    />
+                    <span>
+                      I consent to receive SMS from Fan Engage about artist drops, events, and
+                      rewards. Msg &amp; data rates may apply. Reply STOP to opt out.
+                    </span>
+                  </label>
+                )}
+              </div>
+            )}
+
             <div className="flex items-center justify-between gap-4 pt-4">
               <button
                 className="text-sm text-white/60 disabled:opacity-30"
@@ -271,7 +323,11 @@ export default function OnboardingWizard() {
               {isLastStep ? (
                 <button
                   onClick={handleFinish}
-                  disabled={finishStatus === "saving"}
+                  disabled={
+                    finishStatus === "saving" ||
+                    !tosConsent ||
+                    (Boolean(formState.phone) && !smsConsent)
+                  }
                   className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-aurora to-ember px-6 py-3 text-sm font-semibold text-white shadow-glass transition hover:brightness-110 disabled:opacity-50"
                 >
                   {finishStatus === "saving" ? "Saving…" : "Finish onboarding"}
