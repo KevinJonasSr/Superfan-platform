@@ -1,0 +1,322 @@
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getCurrentCommunityId } from "@/lib/community";
+import { getFounderState, fmtPrice } from "@/lib/stripe-helpers";
+import { createCheckoutSessionAction } from "./actions";
+
+export const dynamic = "force-dynamic";
+
+interface CommunityWithPricing {
+  slug: string;
+  display_name: string;
+  tagline: string | null;
+  accent_from: string;
+  accent_to: string;
+  monthly_price_cents: number;
+  annual_price_cents: number;
+  stripe_product_id: string | null;
+  founder_cap: number;
+  active: boolean;
+}
+
+export default async function PremiumPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{
+    canceled?: string;
+    already_active?: string;
+  }>;
+}) {
+  const params = (await searchParams) ?? {};
+
+  // Who's the viewer + what's the community?
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const communityId = await getCurrentCommunityId();
+  const admin = createAdminClient();
+  const { data: row } = await admin
+    .from("communities")
+    .select(
+      "slug, display_name, tagline, accent_from, accent_to, monthly_price_cents, annual_price_cents, stripe_product_id, founder_cap, active",
+    )
+    .eq("slug", communityId)
+    .maybeSingle();
+  const community = row as CommunityWithPricing | null;
+  if (!community) {
+    return (
+      <main className="mx-auto max-w-2xl px-6 py-16 text-white/70">
+        <h1 className="text-2xl font-semibold text-white">Not found</h1>
+        <p className="mt-2">This community isn&apos;t available yet.</p>
+      </main>
+    );
+  }
+
+  // Membership state — needed to show the right CTA (Upgrade / Manage / etc.)
+  let tier: string | null = null;
+  if (user) {
+    const { data: membership } = await admin
+      .from("fan_community_memberships")
+      .select("subscription_tier")
+      .eq("fan_id", user.id)
+      .eq("community_id", communityId)
+      .maybeSingle();
+    tier = (membership?.subscription_tier as string | null) ?? null;
+  }
+  const isPremium =
+    tier === "premium" || tier === "past_due" || tier === "comped";
+
+  const founder = await getFounderState(communityId);
+
+  const monthly = community.monthly_price_cents;
+  const annual = community.annual_price_cents;
+  const annualMonthlyEquiv = Math.round(annual / 12);
+  const annualSavingsPct = Math.round(
+    (1 - annual / (monthly * 12)) * 100,
+  );
+
+  const perks = [
+    { icon: "🎙️", title: "Backstage feed", body: "Posts only Premium fans see — raw tour moments, works-in-progress, voice notes." },
+    { icon: "🎟️", title: "Early ticket access", body: "First crack at tour tickets, limited by venue capacity." },
+    { icon: "🎁", title: "Exclusive drops", body: "Premium-only signed merch, vinyl, limited runs." },
+    { icon: "💬", title: "Monthly AMA", body: "Live Q&A with the artist — ask anything." },
+    { icon: "🏆", title: "Premium badges", body: "The full status ladder — Silver, Gold, Platinum, and event badges." },
+    { icon: "⚡", title: "1.5× points", body: "Every fan action earns 1.5× more toward rewards." },
+    { icon: "💸", title: "$5/mo store credit", body: "Refreshed monthly — spend on merch, events, or bank it up." },
+    { icon: "🎧", title: "VIP parties", body: "Listening parties and soundchecks reserved for Premium." },
+  ];
+
+  return (
+    <main className="relative overflow-hidden">
+      {/* Accent halo */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-[500px] opacity-40"
+        style={{
+          backgroundImage: `radial-gradient(ellipse at 50% 0%, ${community.accent_from}55, transparent 60%)`,
+        }}
+      />
+
+      <div className="relative mx-auto max-w-5xl px-6 py-16">
+        {/* Alerts */}
+        {params.canceled && (
+          <div className="mb-8 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white/75">
+            Checkout canceled. You can pick up where you left off whenever
+            you&apos;re ready.
+          </div>
+        )}
+        {params.already_active && (
+          <div className="mb-8 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+            You&apos;re already a Premium fan of {community.display_name} —
+            welcome back.
+          </div>
+        )}
+
+        {/* Header */}
+        <p className="text-xs uppercase tracking-widest text-white/50">
+          Premium Fan Club
+        </p>
+        <h1
+          className="mt-3 text-4xl font-semibold md:text-5xl"
+          style={{ fontFamily: "var(--font-display)" }}
+        >
+          {community.display_name}{" "}
+          <span
+            className="bg-clip-text text-transparent"
+            style={{
+              backgroundImage: `linear-gradient(90deg, ${community.accent_from}, ${community.accent_to})`,
+            }}
+          >
+            Premium
+          </span>
+        </h1>
+        <p className="mt-3 max-w-2xl text-lg text-white/70">
+          {community.tagline ?? `The inner circle of the ${community.display_name} community.`}{" "}
+          {fmtPrice(monthly)}/month or {fmtPrice(annual)}/year — everything
+          below, no ads, no gimmicks.
+        </p>
+
+        {/* Founder banner */}
+        {!founder.isFull && (
+          <div
+            className="mt-6 inline-flex items-center gap-2 rounded-full border border-white/15 bg-gradient-to-r from-aurora/20 to-ember/20 px-4 py-2 text-xs font-medium text-white"
+            style={{
+              borderColor: `${community.accent_from}66`,
+            }}
+          >
+            <span aria-hidden>🌟</span>
+            Founding Fan pricing — {founder.slotsRemaining} of {founder.founderCap} spots left. Lock in today&apos;s price forever.
+          </div>
+        )}
+        {founder.isFull && (
+          <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-white/55">
+            Founding Fan spots are full. Standard pricing applies — future
+            price increases won&apos;t affect existing subscribers on either
+            plan.
+          </div>
+        )}
+
+        {/* Already-Premium state */}
+        {isPremium && (
+          <section className="mt-10 rounded-3xl border border-emerald-500/40 bg-emerald-500/10 p-6">
+            <p className="text-xs uppercase tracking-widest text-emerald-300">
+              You&apos;re in
+            </p>
+            <h2 className="mt-1 text-2xl font-semibold">
+              Premium is active{tier === "comped" && " (comped access)"}
+              {tier === "past_due" && " — card needs attention"}
+            </h2>
+            <p className="mt-2 text-sm text-white/70">
+              {tier === "past_due"
+                ? "Your most recent payment failed and Stripe is retrying. Update your card to keep access when the grace period ends."
+                : tier === "comped"
+                  ? "Your Premium access was granted directly by the Jonas Group team. You get every perk below at no charge."
+                  : "All perks below are unlocked. Thanks for being one of us."}
+            </p>
+            <div className="mt-4 flex gap-3">
+              <Link
+                href="/"
+                className="rounded-full bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/15"
+              >
+                Back to community
+              </Link>
+              {tier !== "comped" && (
+                <Link
+                  href="/account/billing"
+                  className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/80 hover:bg-white/5"
+                >
+                  Manage billing →
+                </Link>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Plan picker — only when they're not already premium */}
+        {!isPremium && (
+          <section className="mt-10 grid gap-4 md:grid-cols-2">
+            {/* Monthly */}
+            <form action={createCheckoutSessionAction} className="contents">
+              <input type="hidden" name="billing_period" value="monthly" />
+              <button
+                type="submit"
+                disabled={!user || !community.stripe_product_id}
+                className="group flex flex-col items-start rounded-3xl border border-white/10 bg-black/40 p-6 text-left transition hover:border-white/25 hover:bg-white/5 disabled:opacity-50"
+              >
+                <p className="text-xs uppercase tracking-widest text-white/50">
+                  Monthly
+                </p>
+                <p
+                  className="mt-3 text-4xl font-semibold"
+                  style={{ fontFamily: "var(--font-display)" }}
+                >
+                  {fmtPrice(monthly)}
+                  <span className="ml-1 text-base font-normal text-white/50">
+                    /mo
+                  </span>
+                </p>
+                <p className="mt-2 text-xs text-white/55">
+                  Cancel anytime. No long-term commitment.
+                </p>
+                <span
+                  className="mt-6 inline-flex rounded-full px-4 py-2 text-sm font-semibold text-white transition group-hover:brightness-110"
+                  style={{
+                    backgroundImage: `linear-gradient(90deg, ${community.accent_from}, ${community.accent_to})`,
+                  }}
+                >
+                  Choose monthly →
+                </span>
+              </button>
+            </form>
+
+            {/* Annual */}
+            <form action={createCheckoutSessionAction} className="contents">
+              <input type="hidden" name="billing_period" value="annual" />
+              <button
+                type="submit"
+                disabled={!user || !community.stripe_product_id}
+                className="group relative flex flex-col items-start rounded-3xl border-2 border-white/20 bg-gradient-to-br from-white/8 to-black/40 p-6 text-left transition hover:border-white/35 disabled:opacity-50"
+              >
+                <span className="absolute right-4 top-4 rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                  Save {annualSavingsPct}%
+                </span>
+                <p className="text-xs uppercase tracking-widest text-white/50">
+                  Annual
+                </p>
+                <p
+                  className="mt-3 text-4xl font-semibold"
+                  style={{ fontFamily: "var(--font-display)" }}
+                >
+                  {fmtPrice(annual)}
+                  <span className="ml-1 text-base font-normal text-white/50">
+                    /yr
+                  </span>
+                </p>
+                <p className="mt-2 text-xs text-white/55">
+                  Works out to {fmtPrice(annualMonthlyEquiv)}/mo. Two months free.
+                </p>
+                <span
+                  className="mt-6 inline-flex rounded-full px-4 py-2 text-sm font-semibold text-white transition group-hover:brightness-110"
+                  style={{
+                    backgroundImage: `linear-gradient(90deg, ${community.accent_from}, ${community.accent_to})`,
+                  }}
+                >
+                  Choose annual →
+                </span>
+              </button>
+            </form>
+          </section>
+        )}
+
+        {/* Signed-out prompt */}
+        {!user && (
+          <p className="mt-4 text-sm text-white/60">
+            You&apos;ll need to{" "}
+            <Link href={`/onboarding?next=${encodeURIComponent("/premium")}`} className="underline hover:text-white">
+              create a fan profile
+            </Link>{" "}
+            or{" "}
+            <Link href={`/login?next=${encodeURIComponent("/premium")}`} className="underline hover:text-white">
+              sign in
+            </Link>{" "}
+            before you can subscribe. It takes 60 seconds.
+          </p>
+        )}
+
+        {/* Perks */}
+        <section className="mt-16">
+          <p className="text-xs uppercase tracking-widest text-white/50">
+            What you get
+          </p>
+          <h2
+            className="mt-2 text-3xl font-semibold"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Every perk, for {fmtPrice(monthly)}/month.
+          </h2>
+          <div className="mt-8 grid gap-4 sm:grid-cols-2">
+            {perks.map((p) => (
+              <div
+                key={p.title}
+                className="rounded-2xl border border-white/10 bg-black/30 p-5"
+              >
+                <p className="text-2xl">{p.icon}</p>
+                <p className="mt-2 font-semibold">{p.title}</p>
+                <p className="mt-1 text-sm text-white/60">{p.body}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <p className="mt-12 text-xs text-white/40">
+          Secure checkout via Stripe. Cancel anytime from your account
+          settings. Full refund within 7 days of purchase if you change your
+          mind.
+        </p>
+      </div>
+    </main>
+  );
+}
