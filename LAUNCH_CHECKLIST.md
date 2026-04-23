@@ -3,7 +3,7 @@
 Living document. Update this whenever a launch-blocking item is resolved or a
 new one is discovered. Grouped by category so blockers are easy to scan.
 
-Last updated: Phase 3f — in-app notifications inbox
+Last updated: Phase 4a — multi-tenant foundation (migration 0011)
 
 ---
 
@@ -19,8 +19,9 @@ Last updated: Phase 3f — in-app notifications inbox
 | 0006 | `0006_artists_and_following.sql` | DB-backed artists, events, per-artist following | ✅ applied |
 | 0007 | `0007_events_rsvp.sql` | Event capacity, RSVPs, point trigger | ✅ applied |
 | 0008 | `0008_event_reminders.sql` | event_reminders for cron de-dupe | ✅ applied |
-| **0009** | **`0009_legal_infrastructure.sql`** | **policy_pages, consent, unsub tokens** | **⏳ apply next** |
-| **0010** | **`0010_notifications.sql`** | **notifications table, award_badge fan-out, RSVP + referral triggers** | **⏳ apply after 0009** |
+| 0009 | `0009_legal_infrastructure.sql` | policy_pages, consent, unsub tokens | ✅ applied |
+| 0010 | `0010_notifications.sql` | notifications table, award_badge fan-out, RSVP + referral triggers | ✅ applied |
+| **0011** | **`0011_multi_tenant.sql`** | **communities, fan_community_memberships, admin_users, community_id on every scoped table, Street Team auto-enrollment trigger** | **⏳ apply next** |
 
 **How to apply:** Supabase dashboard → SQL Editor → paste raw file contents from
 <https://github.com/KevinJonasSr/Superfan-platform/tree/main/supabase/migrations>
