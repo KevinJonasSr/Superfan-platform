@@ -88,7 +88,7 @@ select
   coalesce(total_points, 0),
   coalesce(current_tier, 'bronze'),
   referral_code,
-  case when suspended_at is not null then 'suspended' else 'active' end
+  case when suspended then 'suspended' else 'active' end
 from public.fans
 on conflict (fan_id, community_id) do nothing;
 
