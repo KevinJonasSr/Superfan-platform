@@ -22,7 +22,8 @@ Last updated: Phase 4c — admin refactor + activate Danger Twins, Dan Marshall,
 | 0009 | `0009_legal_infrastructure.sql` | policy_pages, consent, unsub tokens | ✅ applied |
 | 0010 | `0010_notifications.sql` | notifications table, award_badge fan-out, RSVP + referral triggers | ✅ applied |
 | 0011 | `0011_multi_tenant.sql` | communities, fan_community_memberships, admin_users, community_id on every scoped table, Street Team auto-enrollment trigger | ✅ applied |
-| **0012** | **`0012_activate_artists.sql`** | **Activate Danger Twins / Dan Marshall / Hunter Hawkins communities + seed matching artists rows with brand accents** | **⏳ apply next** |
+| 0012 | `0012_activate_artists.sql` | Activate Danger Twins / Dan Marshall / Hunter Hawkins communities + seed matching artists rows with brand accents | ✅ applied |
+| **0013** | **`0013_paid_subscriptions.sql`** | **Stripe subscription state on fan_community_memberships, stripe_customer_id on fans, 4 price_ids + founder_cap on communities, badges.tier column, stripe_events idempotency log, credit_grants audit trail, Founding Fan badge seed** | **⏳ apply next** |
 
 **How to apply:** Supabase dashboard → SQL Editor → paste raw file contents from
 <https://github.com/KevinJonasSr/Superfan-platform/tree/main/supabase/migrations>
