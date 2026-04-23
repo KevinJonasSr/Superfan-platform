@@ -75,10 +75,24 @@ on conflict (slug) do update set
   active       = true;
 
 
--- ─── 3. Smoke-test queries ────────────────────────────────────────────────
+-- ─── 3. Deactivate legacy placeholder artists ──────────────────────────────
+-- Migration 0006 seeded the artists table with placeholder entries
+-- (bailee, blake, konnor, dan) that predate the real roster. Those are
+-- test data; deactivating them keeps the /artists list and marketing
+-- landing clean. The real artists are exactly the four community slugs
+-- we just activated.
+
+update public.artists
+   set active = false
+ where slug not in ('raelynn', 'danger-twins', 'dan-marshall', 'hunter-hawkins');
+
+
+-- ─── 4. Smoke-test queries ────────────────────────────────────────────────
 -- select slug, display_name, active, tagline from communities
 --   where type = 'artist' order by sort_order;
--- -- Expected: 4 active rows (raelynn, danger-twins, dan-marshall, hunter-hawkins).
+-- -- Expected: 4 active artist communities.
 --
--- select slug, name, active, sort_order from artists order by sort_order;
--- -- Expected: raelynn active + 3 new rows active.
+-- select slug, name, active, sort_order from artists
+--   order by active desc, sort_order;
+-- -- Expected: 4 active (raelynn, danger-twins, dan-marshall, hunter-hawkins)
+-- --           + 4 inactive legacy placeholders (bailee, blake, konnor, dan).
