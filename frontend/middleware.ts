@@ -1,11 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { resolveCommunityFromHost } from "@/lib/community";
 
 /**
  * Routes a signed-in user must be able to reach.
  * Everything else under /app that's not here or public is open.
  */
-const PROTECTED_PREFIXES = ["/rewards", "/marketplace", "/referrals", "/admin"] as const;
+const PROTECTED_PREFIXES = ["/rewards", "/marketplace", "/referrals", "/admin", "/inbox"] as const;
 
 /**
  * Optional extra protection: a second HTTP Basic Auth layer on /admin/*.
@@ -52,13 +53,22 @@ export async function middleware(request: NextRequest) {
   const basicAuthBlock = enforceAdminBasicAuth(request);
   if (basicAuthBlock) return basicAuthBlock;
 
+  // Layer 1: resolve the community from the hostname and stamp it on the
+  // request so downstream RSCs / server actions can scope their queries
+  // via lib/community.ts::getCurrentCommunityId(). For fan-engage-pearl
+  // and localhost the resolver returns the DEFAULT (raelynn), preserving
+  // single-tenant behavior until wildcard DNS is pointed at the platform.
+  const communityId = resolveCommunityFromHost(request.headers.get("host"));
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-community-id", communityId);
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anon) {
-    return NextResponse.next();
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
-  let response = NextResponse.next({ request });
+  let response = NextResponse.next({ request: { headers: requestHeaders } });
 
   const supabase = createServerClient(url, anon, {
     cookies: {
@@ -69,7 +79,11 @@ export async function middleware(request: NextRequest) {
         cookiesToSet.forEach(({ name, value }) =>
           request.cookies.set(name, value),
         );
-        response = NextResponse.next({ request });
+        // Re-propagate the x-community-id header stamp when Supabase
+        // refreshes the session — otherwise it gets lost during the
+        // NextResponse.next() call and downstream RSCs fall back to
+        // the default community.
+        response = NextResponse.next({ request: { headers: requestHeaders } });
         cookiesToSet.forEach(({ name, value, options }) =>
           response.cookies.set(name, value, options),
         );

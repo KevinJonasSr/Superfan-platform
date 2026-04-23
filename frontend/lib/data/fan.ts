@@ -1,6 +1,60 @@
 import { createClient } from "@/lib/supabase/server";
-import type { FanKpis, FanProfile, Tier } from "./types";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getCurrentCommunityId } from "@/lib/community";
+import type { FanKpis, FanProfile, Tier, TierSlug } from "./types";
 import { getTiers } from "./tiers";
+
+/**
+ * Per-community membership row — the authoritative source of a fan's
+ * points, tier, and referral code within a single community. Replaces
+ * direct reads of `fans.total_points` / `fans.current_tier` in any
+ * code path that's scoped to a specific community.
+ */
+export interface FanMembership {
+  fan_id: string;
+  community_id: string;
+  joined_at: string;
+  total_points: number;
+  current_tier: TierSlug;
+  referral_code: string | null;
+  status: "active" | "suspended" | "pending";
+}
+
+/**
+ * Fetch the signed-in fan's membership for the current community (or a
+ * specific community_id if provided). Returns null for signed-out users,
+ * fans without a membership in the community, or any DB error.
+ */
+export async function getCurrentMembership(
+  communityId?: string,
+): Promise<FanMembership | null> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const community = communityId ?? (await getCurrentCommunityId());
+
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from("fan_community_memberships")
+      .select("*")
+      .eq("fan_id", user.id)
+      .eq("community_id", community)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("getCurrentMembership: supabase error", error.message);
+      return null;
+    }
+    return (data as FanMembership | null) ?? null;
+  } catch (err) {
+    console.warn("getCurrentMembership: failed", err);
+    return null;
+  }
+}
 
 export interface PointBreakdownRow {
   source: string;
@@ -89,8 +143,9 @@ export async function getCurrentFan(): Promise<FanProfile | null> {
 }
 
 /**
- * Rolls up the fan's headline KPIs: total points, referrals, badges,
- * distance to next tier.
+ * Rolls up the fan's headline KPIs for the current community: total
+ * points (from the community membership, not the legacy fans.total_points),
+ * community-scoped referrals and badges, distance to next tier.
  */
 export async function getCurrentFanKpis(): Promise<FanKpis | null> {
   try {
@@ -100,19 +155,24 @@ export async function getCurrentFanKpis(): Promise<FanKpis | null> {
     } = await supabase.auth.getUser();
     if (!user) return null;
 
-    const [fanRes, referralsRes, badgesRes, tiers] = await Promise.all([
-      supabase.from("fans").select("total_points,current_tier").eq("id", user.id).maybeSingle(),
-      supabase.from("referrals").select("id", { count: "exact", head: true }).eq("referrer_id", user.id),
-      supabase.from("fan_badges").select("badge_slug", { count: "exact", head: true }).eq("fan_id", user.id),
+    const communityId = await getCurrentCommunityId();
+
+    const [membership, referralsRes, badgesRes, tiers] = await Promise.all([
+      getCurrentMembership(communityId),
+      supabase
+        .from("referrals")
+        .select("id", { count: "exact", head: true })
+        .eq("referrer_id", user.id)
+        .eq("community_id", communityId),
+      supabase
+        .from("fan_badges")
+        .select("badge_slug", { count: "exact", head: true })
+        .eq("fan_id", user.id)
+        .eq("community_id", communityId),
       getTiers(),
     ]);
 
-    if (fanRes.error) {
-      console.warn("getCurrentFanKpis fans:", fanRes.error.message);
-      return null;
-    }
-
-    const total_points = fanRes.data?.total_points ?? 0;
+    const total_points = membership?.total_points ?? 0;
     const referral_count = referralsRes.count ?? 0;
     const badge_count = badgesRes.count ?? 0;
 
