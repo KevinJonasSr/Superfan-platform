@@ -46,6 +46,9 @@ export interface FanHomeActivityPost {
   author_first_name: string | null;
   created_at: string;
   pinned: boolean;
+  /** Phase 5d: post visibility tier. 'premium' posts are body-gated unless
+   * the viewer has a premium/comped/past_due membership in artist_slug. */
+  visibility: "public" | "premium";
 }
 
 export interface FanHomeBadgeProgress {
@@ -66,6 +69,12 @@ export interface FanHomeData {
   badgesInProgress: FanHomeBadgeProgress[];
   totalEarnedBadges: number;
   totalBadgeCount: number;
+  /**
+   * Phase 5d: the set of community slugs where the viewer currently has
+   * premium/comped/past_due membership. Consumed by the dashboard to decide
+   * whether to reveal the body of premium-tier posts in Recent Activity.
+   */
+  premiumCommunities: string[];
 }
 
 /**
@@ -141,7 +150,7 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
   const activityPromise = followedSlugs.length
     ? admin
         .from("community_posts")
-        .select("id, artist_slug, kind, title, body, author_id, pinned, created_at")
+        .select("id, artist_slug, kind, title, body, author_id, pinned, created_at, visibility")
         .in("artist_slug", followedSlugs)
         .order("created_at", { ascending: false })
         .limit(5)
@@ -154,7 +163,19 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
         author_id: string;
         pinned: boolean;
         created_at: string;
+        visibility: "public" | "premium";
       }> });
+
+  // Phase 5d: viewer's premium memberships across followed communities.
+  // Used to decide which premium posts to body-reveal in Recent Activity.
+  const premiumCommunitiesPromise = followedSlugs.length
+    ? admin
+        .from("fan_community_memberships")
+        .select("community_id, subscription_tier")
+        .eq("fan_id", user.id)
+        .in("community_id", followedSlugs)
+        .in("subscription_tier", ["premium", "comped", "past_due"])
+    : Promise.resolve({ data: [] as Array<{ community_id: string; subscription_tier: string }> });
 
   // Badge progress — get all badges + earned set + compute progress for
   // count-based ones that aren't earned yet.
@@ -209,6 +230,7 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
     entryCountRes,
     referralCountRes,
     remindersRes,
+    premiumCommunitiesRes,
   ] = await Promise.all([
     artistsPromise,
     nextEventPromise,
@@ -223,7 +245,11 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
     entryCountPromise,
     referralCountPromise,
     remindersPromise,
+    premiumCommunitiesPromise,
   ]);
+  const premiumCommunities = ((premiumCommunitiesRes.data ?? []) as Array<{
+    community_id: string;
+  }>).map((r) => r.community_id);
 
   const followedArtists = (artistsRes.data ?? []) as FanHomeFollowedArtist[];
   const artistNameBySlug = new Map(followedArtists.map((a) => [a.slug, a.name]));
@@ -343,6 +369,7 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
     author_id: string;
     pinned: boolean;
     created_at: string;
+    visibility: "public" | "premium" | null;
   }>).map((p) => ({
     id: p.id,
     artist_slug: p.artist_slug,
@@ -353,6 +380,7 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
     author_first_name: authorNameById.get(p.author_id) ?? null,
     created_at: p.created_at,
     pinned: p.pinned,
+    visibility: (p.visibility ?? "public") as "public" | "premium",
   }));
 
   // Badges in progress
@@ -400,5 +428,6 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
     badgesInProgress,
     totalEarnedBadges,
     totalBadgeCount,
+    premiumCommunities,
   };
 }

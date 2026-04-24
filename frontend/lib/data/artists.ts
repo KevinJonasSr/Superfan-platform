@@ -18,6 +18,8 @@ export interface ArtistEvent {
   ends_at: string | null;
   sort_order: number;
   active: boolean;
+  /** Access tier from migration 0015: 'public' (default) | 'premium'. */
+  tier: "public" | "premium";
 }
 
 type ArtistRow = {
@@ -59,6 +61,7 @@ function rowToArtist(row: ArtistRow, events: ArtistEvent[]): Artist {
         capacity: e.capacity ?? null,
         location: e.location ?? null,
         url: e.url ?? null,
+        tier: (e.tier ?? "public") as "public" | "premium",
       })),
     merch: fallback?.merch ?? [],
   };
@@ -83,7 +86,7 @@ export async function getArtistFromDb(slug: string): Promise<Artist | null> {
         .maybeSingle(),
       supabase
         .from("artist_events")
-        .select("id, artist_slug, title, detail, event_date, url, location, image_url, capacity, starts_at, ends_at, sort_order, active")
+        .select("id, artist_slug, title, detail, event_date, url, location, image_url, capacity, starts_at, ends_at, sort_order, active, tier")
         .eq("artist_slug", normalized)
         .eq("active", true)
         .order("sort_order"),
@@ -114,7 +117,7 @@ export async function listArtistsFromDb(): Promise<Artist[]> {
     const slugs = artists.map((a) => a.slug as string);
     const { data: events } = await supabase
       .from("artist_events")
-      .select("id, artist_slug, title, detail, event_date, url, location, image_url, capacity, starts_at, ends_at, sort_order, active")
+      .select("id, artist_slug, title, detail, event_date, url, location, image_url, capacity, starts_at, ends_at, sort_order, active, tier")
       .in("artist_slug", slugs)
       .eq("active", true)
       .order("sort_order");
