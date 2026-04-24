@@ -159,6 +159,18 @@ export default async function PremiumPage({
           </div>
         )}
 
+        {/* Founder wall link */}
+        {founder.founderCap > 0 && (
+          <div className="mt-3">
+            <Link
+              href={`/artists/${communityId}/founders`}
+              className="text-xs text-white/60 hover:text-white/80 transition"
+            >
+              See who&apos;s already a Founding Fan →
+            </Link>
+          </div>
+        )}
+
         {/* Already-Premium state */}
         {isPremium && (
           <section className="mt-10 rounded-3xl border border-emerald-500/40 bg-emerald-500/10 p-6">
