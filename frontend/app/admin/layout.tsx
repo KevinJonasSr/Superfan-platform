@@ -8,12 +8,11 @@ const adminNav = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/artists", label: "Artists" },
   { href: "/admin/campaigns", label: "Campaigns" },
+  { href: "/admin/analytics", label: "Analytics" },
   { href: "/admin/community", label: "Community" },
   { href: "/admin/challenges", label: "Challenges" },
   { href: "/admin/offers", label: "Offers" },
   { href: "/admin/fans", label: "Fans" },
-  { href: "/admin/founders", label: "Founders" },
-  { href: "/admin/analytics", label: "Analytics" },
   { href: "/admin/policies", label: "Policies" },
 ];
 
