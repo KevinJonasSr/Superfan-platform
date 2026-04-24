@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/send-event-reminders",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/refresh-monthly-credits",
+      "schedule": "0 4 * * *"
     }
   ]
 }
