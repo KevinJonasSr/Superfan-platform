@@ -8,6 +8,7 @@ export default function Footer() {
           © {new Date().getFullYear()} Fan Engage. All rights reserved.
         </p>
         <nav className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Link href="/legal" className="hover:text-white">Legal</Link>
           <Link href="/terms" className="hover:text-white">Terms</Link>
           <Link href="/privacy" className="hover:text-white">Privacy</Link>
           <Link href="/cookie-policy" className="hover:text-white">Cookies</Link>
