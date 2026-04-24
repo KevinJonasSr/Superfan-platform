@@ -9,6 +9,7 @@ import {
 import { getRsvpMetaForEvents } from "@/lib/data/events";
 import { getCurrentFan } from "@/lib/data/fan";
 import { canAccess, getViewerEntitlement } from "@/lib/entitlements";
+import { createAdminClient } from "@/lib/supabase/admin";
 import PremiumPaywall from "@/components/premium-paywall";
 import FollowButton from "./follow-button";
 import RsvpButton from "./rsvp-button";
@@ -33,17 +34,46 @@ export async function generateMetadata(
   };
 }
 
+async function getFounderCount(communitySlug: string): Promise<{ count: number; cap: number } | null> {
+  try {
+    const admin = createAdminClient();
+    const { data: community, error: communityError } = await admin
+      .from("communities")
+      .select("founder_cap")
+      .eq("slug", communitySlug)
+      .maybeSingle();
+    
+    if (communityError || !community) return null;
+    
+    const { count, error: countError } = await admin
+      .from("fan_community_memberships")
+      .select("*", { count: "exact", head: true })
+      .eq("community_id", communitySlug)
+      .eq("is_founder", true);
+    
+    if (countError || count === null) return null;
+    
+    return {
+      count,
+      cap: (community.founder_cap as number) ?? 100,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default async function ArtistPage({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const [artist, fan, isFollowing, entitlement] = await Promise.all([
+  const [artist, fan, isFollowing, entitlement, founderData] = await Promise.all([
     getArtistFromDb(slug),
     getCurrentFan(),
     doesFanFollowArtist(slug),
     getViewerEntitlement(slug),
+    getFounderCount(slug),
   ]);
   if (!artist) notFound();
   const isSignedIn = fan !== null;
@@ -71,6 +101,8 @@ export default async function ArtistPage({
   const secondaryCta = isSignedIn
     ? { label: "My rewards", href: "/rewards" }
     : { label: "See merchandise", href: "/marketplace" };
+
+  const showFounderLink = founderData && founderData.cap > 0;
 
   return (
     <main className="mx-auto max-w-6xl space-y-10 px-6 py-12">
@@ -119,6 +151,18 @@ export default async function ArtistPage({
           </p>
         )}
       </section>
+
+      {/* Founder wall link */}
+      {showFounderLink && (
+        <section className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-4">
+          <Link
+            href={`/artists/${slug}/founders`}
+            className="inline-flex items-center gap-2 text-sm font-medium text-white/80 hover:text-white transition"
+          >
+            👑 See the {founderData!.count} Founding Fans →
+          </Link>
+        </section>
+      )}
 
       {/* About */}
       <section className="grid gap-6 lg:grid-cols-[2fr_1fr]">
