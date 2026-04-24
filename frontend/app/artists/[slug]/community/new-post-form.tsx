@@ -10,6 +10,7 @@ import {
 } from "./actions";
 
 type Kind = "post" | "announcement" | "poll" | "challenge";
+type Visibility = "public" | "premium" | "founder-only";
 
 export default function NewPostForm({
   artistSlug,
@@ -21,7 +22,7 @@ export default function NewPostForm({
   const [kind, setKind] = useState<Kind>("post");
   const [submitting, setSubmitting] = useState(false);
   const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
-  const [visibility, setVisibility] = useState<"public" | "premium">("public");
+  const [visibility, setVisibility] = useState<Visibility>("public");
   // Bump this key to force-remount the ImageUploader after a submit (which
   // clears its internal state + hidden input).
   const [uploaderKey, setUploaderKey] = useState(0);
@@ -37,8 +38,8 @@ export default function NewPostForm({
   async function handleSubmit(formData: FormData) {
     setSubmitting(true);
     try {
-      // Admins can flag a post Premium-only; non-admins never get this option
-      // in the UI, and the server action also rejects it on fan-created posts.
+      // Admins can flag a post public, premium, or founder-only; non-admins never get
+      // this option in the UI, and the server action also rejects it on fan-created posts.
       if (isAdmin && kind !== "post") {
         formData.set("visibility", visibility);
       }
@@ -100,24 +101,41 @@ export default function NewPostForm({
             </button>
           ))}
           {kind !== "post" && (
-            <button
-              type="button"
-              onClick={() =>
-                setVisibility((v) => (v === "public" ? "premium" : "public"))
-              }
-              title={
-                visibility === "premium"
-                  ? "Visible only to Premium fans — click to make public"
-                  : "Visible to everyone — click to make Premium-only"
-              }
-              className={`ml-auto rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                visibility === "premium"
-                  ? "border-amber-300/70 bg-gradient-to-r from-aurora/30 to-ember/30 text-white"
-                  : "border-white/15 bg-black/30 text-white/60 hover:bg-black/50"
-              }`}
-            >
-              {visibility === "premium" ? "⭐ Premium only" : "🌐 Public"}
-            </button>
+            <div className="ml-auto flex items-center gap-1 rounded-full border border-white/15 bg-black/30 p-0.5">
+              {(["public", "premium", "founder-only"] as Visibility[]).map((v) => {
+                const isActive = visibility === v;
+                const labels: Record<Visibility, string> = {
+                  public: "🌐 Public",
+                  premium: "⭐ Premium",
+                  "founder-only": "👑 Founders",
+                };
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setVisibility(v)}
+                    title={
+                      v === "public"
+                        ? "Visible to everyone"
+                        : v === "premium"
+                          ? "Visible only to Premium fans"
+                          : "Visible only to Founders"
+                    }
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold transition ${
+                      isActive
+                        ? v === "premium"
+                          ? "border border-amber-300/70 bg-gradient-to-r from-aurora/30 to-ember/30 text-white"
+                          : v === "founder-only"
+                            ? "border border-amber-300/70 bg-gradient-to-r from-amber-500/30 to-yellow-500/30 text-white"
+                            : "border border-cyan-300/70 bg-gradient-to-r from-aurora/30 to-cyan-500/30 text-white"
+                        : "text-white/60 hover:text-white/80"
+                    }`}
+                  >
+                    {labels[v]}
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
       )}

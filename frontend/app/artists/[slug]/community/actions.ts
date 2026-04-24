@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAdminUser } from "@/lib/admin";
 
+type Visibility = "public" | "premium" | "founder-only";
+
 async function requireUser() {
   const supabase = await createClient();
   const {
@@ -13,6 +15,12 @@ async function requireUser() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   return { supabase, userId: user.id };
+}
+
+function normalizeVisibility(raw: FormDataEntryValue | null): Visibility {
+  const v = String(raw ?? "public").toLowerCase().trim();
+  if (v === "premium" || v === "founder-only") return v;
+  return "public";
 }
 
 export async function createPostAction(formData: FormData) {
@@ -123,10 +131,7 @@ export async function createPollAction(formData: FormData) {
 
   const artistSlug = String(formData.get("artist_slug") ?? "").trim();
   const body = String(formData.get("body") ?? "").trim();
-  const visibility =
-    String(formData.get("visibility") ?? "public") === "premium"
-      ? "premium"
-      : "public";
+  const visibility = normalizeVisibility(formData.get("visibility"));
   const options = formData
     .getAll("option")
     .map((o) => String(o).trim())
@@ -191,10 +196,7 @@ export async function createChallengeAction(formData: FormData) {
   const artistSlug = String(formData.get("artist_slug") ?? "").trim();
   const body = String(formData.get("body") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
-  const visibility =
-    String(formData.get("visibility") ?? "public") === "premium"
-      ? "premium"
-      : "public";
+  const visibility = normalizeVisibility(formData.get("visibility"));
   if (!artistSlug || !body) return;
 
   const admin = createAdminClient();
@@ -239,10 +241,7 @@ export async function createAnnouncementAction(formData: FormData) {
   const artistSlug = String(formData.get("artist_slug") ?? "").trim();
   const body = String(formData.get("body") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
-  const visibility =
-    String(formData.get("visibility") ?? "public") === "premium"
-      ? "premium"
-      : "public";
+  const visibility = normalizeVisibility(formData.get("visibility"));
   if (!artistSlug || !body) return;
 
   const admin = createAdminClient();
