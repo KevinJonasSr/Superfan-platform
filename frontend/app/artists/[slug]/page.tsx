@@ -8,6 +8,8 @@ import {
 } from "@/lib/data/artists";
 import { getRsvpMetaForEvents } from "@/lib/data/events";
 import { getCurrentFan } from "@/lib/data/fan";
+import { canAccess, getViewerEntitlement } from "@/lib/entitlements";
+import PremiumPaywall from "@/components/premium-paywall";
 import FollowButton from "./follow-button";
 import RsvpButton from "./rsvp-button";
 
@@ -37,10 +39,11 @@ export default async function ArtistPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const [artist, fan, isFollowing] = await Promise.all([
+  const [artist, fan, isFollowing, entitlement] = await Promise.all([
     getArtistFromDb(slug),
     getCurrentFan(),
     doesFanFollowArtist(slug),
+    getViewerEntitlement(slug),
   ]);
   if (!artist) notFound();
   const isSignedIn = fan !== null;
@@ -146,6 +149,26 @@ export default async function ArtistPage({
         <p className="text-sm uppercase tracking-wide text-white/60">Upcoming</p>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           {artist.upcoming.map((e) => {
+            // Phase 5d: gate premium-tier events. Fallback events (no id)
+            // have no DB tier; treat as public.
+            const eventTier = e.tier ?? "public";
+            const access = canAccess(eventTier, entitlement);
+            if (!access.allowed) {
+              return (
+                <PremiumPaywall
+                  key={e.id ?? e.title}
+                  feature={e.title}
+                  description="Premium fans get access to intimate listening parties, early RSVPs, and backstage-only moments."
+                  communityId={slug}
+                  accentFrom={artist.accentFrom}
+                  accentTo={artist.accentTo}
+                  reason={
+                    access.reason === "signed-out" ? "signed-out" : "needs-premium"
+                  }
+                  compact
+                />
+              );
+            }
             const eventId = e.id ?? null;
             const count = eventId ? rsvpCounts.get(eventId) ?? 0 : 0;
             const atCapacity =
