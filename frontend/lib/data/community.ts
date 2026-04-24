@@ -25,7 +25,7 @@ export async function getPostsByArtist(
     const { data: posts, error: postsErr } = await supabase
       .from("community_posts")
       .select(
-        "id, artist_slug, author_id, kind, title, body, image_url, pinned, visibility, created_at",
+        "id, artist_slug, author_id, kind, title, body, image_url, video_url, video_poster_url, pinned, visibility, created_at",
       )
       .eq("artist_slug", artistSlug)
       .order("pinned", { ascending: false })
@@ -98,6 +98,8 @@ export async function getPostsByArtist(
           title: p.title as string | null,
           body: p.body as string,
           image_url: p.image_url as string | null,
+          video_url: p.video_url as string | null,
+          video_poster_url: p.video_poster_url as string | null,
           pinned: p.pinned as boolean,
           visibility:
             ((p.visibility as "public" | "premium" | null) ?? "public"),

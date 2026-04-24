@@ -113,6 +113,8 @@ export interface CommunityPost {
   kind: CommunityPostKind;
   title: string | null;
   body: string;
+  video_url: string | null;
+  video_poster_url: string | null;
   image_url: string | null;
   pinned: boolean;
   visibility: CommunityPostVisibility;
