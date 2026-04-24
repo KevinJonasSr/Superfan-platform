@@ -24,7 +24,8 @@ Last updated: Phase 4c — admin refactor + activate Danger Twins, Dan Marshall,
 | 0011 | `0011_multi_tenant.sql` | communities, fan_community_memberships, admin_users, community_id on every scoped table, Street Team auto-enrollment trigger | ✅ applied |
 | 0012 | `0012_activate_artists.sql` | Activate Danger Twins / Dan Marshall / Hunter Hawkins communities + seed matching artists rows with brand accents | ✅ applied |
 | 0013 | `0013_paid_subscriptions.sql` | Stripe subscription state on fan_community_memberships, stripe_customer_id on fans, 4 price_ids + founder_cap on communities, badges.tier column, stripe_events idempotency log, credit_grants audit trail, Founding Fan badge seed | ✅ applied |
-| **0014** | **`0014_founder_slot.sql`** | **claim_founder_slot() Postgres function — race-safe founder number assignment via per-community advisory lock** | **⏳ apply next** |
+| 0014 | `0014_founder_slot.sql` | claim_founder_slot() Postgres function — race-safe founder number assignment via per-community advisory lock | ✅ applied |
+| **0015** | **`0015_premium_gating.sql`** | **community_posts.visibility + artist_events.tier columns, is_premium() + points_multiplier() helper functions** | **⏳ apply next** |
 
 **How to apply:** Supabase dashboard → SQL Editor → paste raw file contents from
 <https://github.com/KevinJonasSr/Superfan-platform/tree/main/supabase/migrations>
@@ -43,8 +44,11 @@ just `drop policy if exists` / `drop trigger if exists` being safely idempotent)
 | `MAILCHIMP_API_KEY`, `MAILCHIMP_SERVER_PREFIX`, `MAILCHIMP_AUDIENCE_ID` | Email subscribe + broadcast | ✅ set |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_MESSAGING_SERVICE_SID` | SMS outbound | ✅ set |
 | `ADMIN_EMAILS` | Allowlist for `/admin/*` access | ✅ set |
-| **`CRON_SECRET`** | Protects `/api/cron/send-event-reminders` from public hits | **⏳ set next** |
-| **`ADMIN_BASIC_USER`** + **`ADMIN_BASIC_PASS`** | Optional extra HTTP Basic Auth on `/admin/*` | **⏳ optional** |
+| `CRON_SECRET` | Protects `/api/cron/send-event-reminders` from public hits | ✅ set |
+| `ADMIN_BASIC_USER` + `ADMIN_BASIC_PASS` | Optional extra HTTP Basic Auth on `/admin/*` | ✅ set |
+| `STRIPE_SECRET_KEY` | Stripe server-side API key (test mode until launch) | ✅ set |
+| `STRIPE_SEED_SECRET` | Bearer token for `/api/admin/stripe-seed` bootstrap endpoint | ✅ set |
+| **`STRIPE_WEBHOOK_SECRET`** | Verifies signatures on `/api/stripe/webhook` — copy from Stripe dashboard → Developers → Webhooks → endpoint → Signing secret | **✅ set (whsec_rcd…LrZF — redeploy in progress)** |
 | **`NEXT_PUBLIC_APP_URL`** | Used in email unsubscribe links (defaults to `fan-engage-pearl.vercel.app` if unset) | **⏳ set before custom domain** |
 
 Vercel env vars: <https://vercel.com/jonas-group/fan-engage/settings/environment-variables>

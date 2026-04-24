@@ -12,6 +12,8 @@ import {
   getPollData,
   getPostsByArtist,
 } from "@/lib/data/community";
+import { canAccess, getViewerEntitlement } from "@/lib/entitlements";
+import PremiumPaywall from "@/components/premium-paywall";
 import FanCtaBlock from "./fan-cta-block";
 import NewPostForm from "./new-post-form";
 import PostCard from "./post-card";
@@ -40,11 +42,12 @@ export default async function ArtistCommunityPage({
   const artist = await getArtistFromDb(slug);
   if (!artist) notFound();
 
-  const [fan, posts, adminUser, fanActions] = await Promise.all([
+  const [fan, posts, adminUser, fanActions, entitlement] = await Promise.all([
     getCurrentFan(),
     getPostsByArtist(slug, 30),
     getAdminUser(),
     getActiveFanActionsForArtist(slug),
+    getViewerEntitlement(slug),
   ]);
 
   // Parallel-fetch comments + poll data + challenge entries for every visible
@@ -133,18 +136,44 @@ export default async function ArtistCommunityPage({
         </section>
       ) : (
         <div className="space-y-4">
-          {posts.map((post, i) => (
-            <PostCard
-              key={post.id}
-              post={post}
-              initialComments={commentsByPost[i]}
-              isAuthor={fan !== null && post.author_id === fan.id}
-              isAdmin={isAdmin}
-              currentUserId={fan?.id ?? null}
-              poll={pollByPost[i]}
-              challengeEntries={entriesByPost[i]}
-            />
-          ))}
+          {posts.map((post, i) => {
+            // Admins always see everything — otherwise gate premium posts.
+            const access = isAdmin
+              ? { allowed: true, reason: "premium-member" as const }
+              : canAccess(post.visibility, entitlement);
+            if (!access.allowed) {
+              return (
+                <PremiumPaywall
+                  key={post.id}
+                  feature="This post"
+                  description={
+                    post.title
+                      ? `"${post.title}" — Premium fans see every backstage post, voice note, and work-in-progress.`
+                      : "Premium fans see every backstage post, voice note, and work-in-progress."
+                  }
+                  communityId={slug}
+                  accentFrom={artist.accentFrom}
+                  accentTo={artist.accentTo}
+                  reason={
+                    access.reason === "signed-out" ? "signed-out" : "needs-premium"
+                  }
+                  compact
+                />
+              );
+            }
+            return (
+              <PostCard
+                key={post.id}
+                post={post}
+                initialComments={commentsByPost[i]}
+                isAuthor={fan !== null && post.author_id === fan.id}
+                isAdmin={isAdmin}
+                currentUserId={fan?.id ?? null}
+                poll={pollByPost[i]}
+                challengeEntries={entriesByPost[i]}
+              />
+            );
+          })}
         </div>
       )}
     </main>

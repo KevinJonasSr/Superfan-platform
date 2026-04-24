@@ -21,6 +21,7 @@ export default function NewPostForm({
   const [kind, setKind] = useState<Kind>("post");
   const [submitting, setSubmitting] = useState(false);
   const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
+  const [visibility, setVisibility] = useState<"public" | "premium">("public");
   // Bump this key to force-remount the ImageUploader after a submit (which
   // clears its internal state + hidden input).
   const [uploaderKey, setUploaderKey] = useState(0);
@@ -29,12 +30,19 @@ export default function NewPostForm({
   function resetForm() {
     formRef.current?.reset();
     setPollOptions(["", ""]);
+    setVisibility("public");
     setUploaderKey((k) => k + 1);
   }
 
   async function handleSubmit(formData: FormData) {
     setSubmitting(true);
     try {
+      // Admins can flag a post Premium-only; non-admins never get this option
+      // in the UI, and the server action also rejects it on fan-created posts.
+      if (isAdmin && kind !== "post") {
+        formData.set("visibility", visibility);
+      }
+
       if (kind === "poll") {
         // Replace generic option[] entries with our state-tracked ones so admins
         // can add/remove option inputs dynamically.
@@ -76,7 +84,7 @@ export default function NewPostForm({
       <input type="hidden" name="artist_slug" value={artistSlug} />
 
       {isAdmin && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {(["post", "announcement", "poll", "challenge"] as Kind[]).map((k) => (
             <button
               key={k}
@@ -91,6 +99,26 @@ export default function NewPostForm({
               {k === "post" ? "Post" : k === "announcement" ? "📢 Announcement" : k === "poll" ? "📊 Poll" : "🏆 Challenge"}
             </button>
           ))}
+          {kind !== "post" && (
+            <button
+              type="button"
+              onClick={() =>
+                setVisibility((v) => (v === "public" ? "premium" : "public"))
+              }
+              title={
+                visibility === "premium"
+                  ? "Visible only to Premium fans — click to make public"
+                  : "Visible to everyone — click to make Premium-only"
+              }
+              className={`ml-auto rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                visibility === "premium"
+                  ? "border-amber-300/70 bg-gradient-to-r from-aurora/30 to-ember/30 text-white"
+                  : "border-white/15 bg-black/30 text-white/60 hover:bg-black/50"
+              }`}
+            >
+              {visibility === "premium" ? "⭐ Premium only" : "🌐 Public"}
+            </button>
+          )}
         </div>
       )}
 

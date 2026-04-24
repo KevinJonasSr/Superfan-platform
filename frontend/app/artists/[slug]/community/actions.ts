@@ -123,6 +123,10 @@ export async function createPollAction(formData: FormData) {
 
   const artistSlug = String(formData.get("artist_slug") ?? "").trim();
   const body = String(formData.get("body") ?? "").trim();
+  const visibility =
+    String(formData.get("visibility") ?? "public") === "premium"
+      ? "premium"
+      : "public";
   const options = formData
     .getAll("option")
     .map((o) => String(o).trim())
@@ -137,6 +141,7 @@ export async function createPollAction(formData: FormData) {
       author_id: adminUser.id,
       kind: "poll",
       body,
+      visibility,
     })
     .select("id")
     .single();
@@ -186,6 +191,10 @@ export async function createChallengeAction(formData: FormData) {
   const artistSlug = String(formData.get("artist_slug") ?? "").trim();
   const body = String(formData.get("body") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
+  const visibility =
+    String(formData.get("visibility") ?? "public") === "premium"
+      ? "premium"
+      : "public";
   if (!artistSlug || !body) return;
 
   const admin = createAdminClient();
@@ -195,6 +204,7 @@ export async function createChallengeAction(formData: FormData) {
     kind: "challenge",
     title: title || null,
     body,
+    visibility,
   });
 
   revalidatePath(`/artists/${artistSlug}/community`);
@@ -229,6 +239,10 @@ export async function createAnnouncementAction(formData: FormData) {
   const artistSlug = String(formData.get("artist_slug") ?? "").trim();
   const body = String(formData.get("body") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
+  const visibility =
+    String(formData.get("visibility") ?? "public") === "premium"
+      ? "premium"
+      : "public";
   if (!artistSlug || !body) return;
 
   const admin = createAdminClient();
@@ -239,6 +253,7 @@ export async function createAnnouncementAction(formData: FormData) {
     title: title || null,
     body,
     pinned: true, // announcements are pinned by default
+    visibility,
   });
 
   revalidatePath(`/artists/${artistSlug}/community`);

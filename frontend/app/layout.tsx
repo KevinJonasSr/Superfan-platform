@@ -5,8 +5,11 @@ import "./globals.css";
 import CookieBanner from "@/components/cookie-banner";
 import Footer from "@/components/footer";
 import InstallPrompt from "@/components/install-prompt";
+import PremiumBadge from "@/components/premium-badge";
 import { createClient } from "@/lib/supabase/server";
 import { getUnreadCount } from "@/lib/data/notifications";
+import { getCurrentCommunityId } from "@/lib/community";
+import { getEntitlement } from "@/lib/entitlements";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-body" });
 const spaceGrotesk = Space_Grotesk({
@@ -88,6 +91,7 @@ async function getCurrentUserSafe() {
       .eq("id", data.user.id)
       .maybeSingle();
     return {
+      id: data.user.id,
       email: data.user.email,
       first_name: (fan?.first_name as string | null) ?? null,
       avatar_url: (fan?.avatar_url as string | null) ?? null,
@@ -103,14 +107,30 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const user = await getCurrentUserSafe();
-  // Unread inbox count only matters for signed-in fans. Wrapped in a try so a
-  // transient DB error never breaks the header.
+  // Unread inbox count + premium entitlement are only meaningful for
+  // signed-in fans. Both are wrapped so a transient DB hiccup never
+  // breaks the header render.
   let unread = 0;
+  let isPremium = false;
+  let isFounder = false;
+  let founderNumber: number | null = null;
   if (user) {
     try {
-      unread = await getUnreadCount();
+      const [unreadResult, communityId] = await Promise.all([
+        getUnreadCount().catch(() => 0),
+        getCurrentCommunityId().catch(() => null),
+      ]);
+      unread = unreadResult;
+      if (communityId) {
+        const ent = await getEntitlement(user.id, communityId).catch(() => null);
+        if (ent) {
+          isPremium = ent.isPremium;
+          isFounder = ent.isFounder;
+          founderNumber = ent.founderNumber;
+        }
+      }
     } catch {
-      unread = 0;
+      // Already defaulted above.
     }
   }
 
@@ -146,6 +166,11 @@ export default async function RootLayout({
             </nav>
             {user ? (
               <div className="flex items-center gap-3">
+                <PremiumBadge
+                  isPremium={isPremium}
+                  isFounder={isFounder}
+                  founderNumber={founderNumber}
+                />
                 <Link
                   href="/inbox"
                   aria-label={

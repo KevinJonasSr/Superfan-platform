@@ -103,6 +103,8 @@ export interface LeaderboardRow {
 
 export type CommunityPostKind = "post" | "announcement" | "poll" | "challenge";
 
+export type CommunityPostVisibility = "public" | "premium";
+
 export interface CommunityPost {
   id: string;
   artist_slug: string;
@@ -113,6 +115,7 @@ export interface CommunityPost {
   body: string;
   image_url: string | null;
   pinned: boolean;
+  visibility: CommunityPostVisibility;
   created_at: string;
   reaction_counts: Record<string, number>; // { "❤️": 3, "🔥": 2 }
   my_reactions: string[]; // emoji list the current fan has already given
