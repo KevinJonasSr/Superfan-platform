@@ -155,7 +155,11 @@ export default async function ArtistCommunityPage({
                   accentFrom={artist.accentFrom}
                   accentTo={artist.accentTo}
                   reason={
-                    access.reason === "signed-out" ? "signed-out" : "needs-premium"
+                    access.reason === "signed-out"
+                      ? "signed-out"
+                      : access.reason === "needs-founder"
+                        ? "needs-founder"
+                        : "needs-premium"
                   }
                   compact
                 />
