@@ -7,8 +7,15 @@ import type { FanHomeData } from "@/lib/data/fan-home";
  * so there are no client-side fetches here.
  */
 export default function FanHomeDashboard({ data }: { data: FanHomeData }) {
-  const { fan, followedArtists, nextEvent, ctas, recentActivity, badgesInProgress } =
-    data;
+  const {
+    fan,
+    followedArtists,
+    nextEvent,
+    ctas,
+    recentActivity,
+    badgesInProgress,
+    premiumCommunities,
+  } = data;
 
   return (
     <section className="space-y-6">
@@ -38,7 +45,10 @@ export default function FanHomeDashboard({ data }: { data: FanHomeData }) {
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Recent activity */}
-        <RecentActivityFeed posts={recentActivity} />
+        <RecentActivityFeed
+          posts={recentActivity}
+          premiumCommunities={premiumCommunities}
+        />
 
         {/* Badges in progress */}
         <BadgesInProgressPanel items={badgesInProgress} />
@@ -239,7 +249,14 @@ function ActiveCtasBlock({ ctas }: { ctas: FanHomeData["ctas"] }) {
   );
 }
 
-function RecentActivityFeed({ posts }: { posts: FanHomeData["recentActivity"] }) {
+function RecentActivityFeed({
+  posts,
+  premiumCommunities,
+}: {
+  posts: FanHomeData["recentActivity"];
+  premiumCommunities: FanHomeData["premiumCommunities"];
+}) {
+  const premiumSet = new Set(premiumCommunities);
   return (
     <section className="glass-card p-5">
       <div className="flex items-center justify-between">
@@ -253,21 +270,46 @@ function RecentActivityFeed({ posts }: { posts: FanHomeData["recentActivity"] })
         </p>
       ) : (
         <div className="mt-4 space-y-3">
-          {posts.map((p) => (
-            <Link
-              key={p.id}
-              href={`/artists/${p.artist_slug}/community`}
-              className="block rounded-xl bg-black/30 p-3 transition hover:bg-black/50"
-            >
-              <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
-                <span className="text-white">{p.artist_name ?? `/${p.artist_slug}`}</span>
-                <KindChip kind={p.kind} />
-                <span>· {timeAgo(p.created_at)}</span>
-              </div>
-              {p.title && <p className="mt-1 text-sm font-semibold">{p.title}</p>}
-              <p className="mt-1 line-clamp-2 text-sm text-white/80">{p.body}</p>
-            </Link>
-          ))}
+          {posts.map((p) => {
+            // Phase 5d: body-gate premium posts the viewer can't see.
+            // Card + title + artist + kind chip stay so the teaser still
+            // hints that premium content exists — the click-through to the
+            // community page hits the full PremiumPaywall.
+            const isGated =
+              p.visibility === "premium" && !premiumSet.has(p.artist_slug);
+            return (
+              <Link
+                key={p.id}
+                href={`/artists/${p.artist_slug}/community`}
+                className="block rounded-xl bg-black/30 p-3 transition hover:bg-black/50"
+              >
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
+                  <span className="text-white">
+                    {p.artist_name ?? `/${p.artist_slug}`}
+                  </span>
+                  <KindChip kind={p.kind} />
+                  {isGated && (
+                    <span className="rounded-full bg-amber-400/15 px-2 py-[2px] text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                      ⭐ Premium
+                    </span>
+                  )}
+                  <span>· {timeAgo(p.created_at)}</span>
+                </div>
+                {p.title && (
+                  <p className="mt-1 text-sm font-semibold">{p.title}</p>
+                )}
+                {isGated ? (
+                  <p className="mt-1 text-sm italic text-white/50">
+                    🔒 Premium post — upgrade to read
+                  </p>
+                ) : (
+                  <p className="mt-1 line-clamp-2 text-sm text-white/80">
+                    {p.body}
+                  </p>
+                )}
+              </Link>
+            );
+          })}
         </div>
       )}
     </section>
