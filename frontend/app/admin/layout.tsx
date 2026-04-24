@@ -12,6 +12,7 @@ const adminNav = [
   { href: "/admin/challenges", label: "Challenges" },
   { href: "/admin/offers", label: "Offers" },
   { href: "/admin/fans", label: "Fans" },
+  { href: "/admin/founders", label: "Founders" },
   { href: "/admin/analytics", label: "Analytics" },
   { href: "/admin/policies", label: "Policies" },
 ];
