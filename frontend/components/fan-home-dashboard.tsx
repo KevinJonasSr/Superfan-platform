@@ -15,6 +15,7 @@ export default function FanHomeDashboard({ data }: { data: FanHomeData }) {
     recentActivity,
     badgesInProgress,
     premiumCommunities,
+    founderCommunities,
   } = data;
 
   return (
@@ -48,6 +49,7 @@ export default function FanHomeDashboard({ data }: { data: FanHomeData }) {
         <RecentActivityFeed
           posts={recentActivity}
           premiumCommunities={premiumCommunities}
+          founderCommunities={founderCommunities}
         />
 
         {/* Badges in progress */}
@@ -252,11 +254,15 @@ function ActiveCtasBlock({ ctas }: { ctas: FanHomeData["ctas"] }) {
 function RecentActivityFeed({
   posts,
   premiumCommunities,
+  founderCommunities,
 }: {
   posts: FanHomeData["recentActivity"];
   premiumCommunities: FanHomeData["premiumCommunities"];
+  founderCommunities: FanHomeData["founderCommunities"];
 }) {
   const premiumSet = new Set(premiumCommunities);
+  const founderSet = new Set(founderCommunities);
+
   return (
     <section className="glass-card p-5">
       <div className="flex items-center justify-between">
@@ -271,12 +277,16 @@ function RecentActivityFeed({
       ) : (
         <div className="mt-4 space-y-3">
           {posts.map((p) => {
-            // Phase 5d: body-gate premium posts the viewer can't see.
-            // Card + title + artist + kind chip stay so the teaser still
-            // hints that premium content exists — the click-through to the
-            // community page hits the full PremiumPaywall.
-            const isGated =
+            // Phase 5e: body-gate premium and founder-only posts the viewer can't see.
+            // Card + title + artist + kind chip stay so the teaser still hints that
+            // gated content exists — the click-through to the community page hits the
+            // full PremiumPaywall or FounderPaywall.
+            const isPremiumGated =
               p.visibility === "premium" && !premiumSet.has(p.artist_slug);
+            const isFounderGated =
+              p.visibility === "founder-only" && !founderSet.has(p.artist_slug);
+            const isGated = isPremiumGated || isFounderGated;
+
             return (
               <Link
                 key={p.id}
@@ -289,8 +299,14 @@ function RecentActivityFeed({
                   </span>
                   <KindChip kind={p.kind} />
                   {isGated && (
-                    <span className="rounded-full bg-amber-400/15 px-2 py-[2px] text-[10px] font-semibold uppercase tracking-wide text-amber-200">
-                      ⭐ Premium
+                    <span
+                      className={`rounded-full px-2 py-[2px] text-[10px] font-semibold uppercase tracking-wide ${
+                        isFounderGated
+                          ? "bg-amber-400/15 text-amber-200"
+                          : "bg-amber-400/15 text-amber-200"
+                      }`}
+                    >
+                      {isFounderGated ? "👑 Founders only" : "⭐ Premium"}
                     </span>
                   )}
                   <span>· {timeAgo(p.created_at)}</span>
@@ -300,7 +316,9 @@ function RecentActivityFeed({
                 )}
                 {isGated ? (
                   <p className="mt-1 text-sm italic text-white/50">
-                    🔒 Premium post — upgrade to read
+                    {isFounderGated
+                      ? "🔒 Founders-only post — upgrade to unlock"
+                      : "🔒 Premium post — upgrade to read"}
                   </p>
                 ) : (
                   <p className="mt-1 line-clamp-2 text-sm text-white/80">
