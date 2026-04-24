@@ -194,12 +194,18 @@ async function handleSubscriptionCreated(
       p_community_id: communityId,
     });
     if (typeof slot === "number" && slot > 0) {
-      // Award Founding Fan badge (idempotent via PK)
-      await admin.from("fan_badges").insert({
-        fan_id: fanId,
-        badge_slug: "founding-fan",
-        community_id: communityId,
+      // Phase 5e: route through award_community_badge so the fan also
+      // gets the +500 pts ledger entry AND the in-app notification.
+      // Idempotent — ON CONFLICT DO NOTHING, returns false if already
+      // earned in this community (e.g. Stripe retry after a 5xx).
+      const { error: awardErr } = await admin.rpc("award_community_badge", {
+        p_fan_id: fanId,
+        p_slug: "founding-fan",
+        p_community_id: communityId,
       });
+      if (awardErr) {
+        console.warn("founding-fan badge award failed", awardErr);
+      }
     }
   }
 }
