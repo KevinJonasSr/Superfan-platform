@@ -16,6 +16,12 @@ export type Artist = {
     capacity?: number | null;
     location?: string | null;
     url?: string | null;
+    /**
+     * Phase 5d: access tier for this event. DB events carry their row's
+     * `tier` column ('public' | 'premium'); legacy hardcoded fallback
+     * entries leave this undefined and are treated as public.
+     */
+    tier?: "public" | "premium";
   }[];
   merch: { title: string; tier: string; points: string }[];
   social: { label: string; href: string }[];
