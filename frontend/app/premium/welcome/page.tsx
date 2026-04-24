@@ -2,6 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getStripe } from "@/lib/stripe";
 import { getCurrentCommunity } from "@/lib/community";
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +52,48 @@ export default async function PremiumWelcomePage({
     console.warn("PremiumWelcomePage: failed to fetch session", err);
   }
 
+  // Phase 5e: for founder checkouts, fetch founder_number from the
+  // membership so we can celebrate with their actual slot (e.g. "#47").
+  // The webhook is async, so we briefly retry — if claim_founder_slot()
+  // hasn't run yet, founder_number is null and we show a pending state.
+  let founderNumber: number | null = null;
+  let fanFirstName: string | null = null;
+  if (isFounder && status === "complete" && community) {
+    try {
+      const supabase = await createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        const admin = createAdminClient();
+        // Up to 3 attempts, 800ms apart — generous enough to catch the
+        // webhook on typical paths, short enough to not block the render.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const { data } = await admin
+            .from("fan_community_memberships")
+            .select("founder_number")
+            .eq("fan_id", user.id)
+            .eq("community_id", community.slug)
+            .maybeSingle();
+          const n = (data?.founder_number as number | null) ?? null;
+          if (n !== null) {
+            founderNumber = n;
+            break;
+          }
+          if (attempt < 2) await new Promise((r) => setTimeout(r, 800));
+        }
+        const { data: fan } = await admin
+          .from("fans")
+          .select("first_name")
+          .eq("id", user.id)
+          .maybeSingle();
+        fanFirstName = (fan?.first_name as string | null) ?? null;
+      }
+    } catch (err) {
+      console.warn("PremiumWelcomePage: founder lookup failed", err);
+    }
+  }
+
   const accentFrom = community?.accent_from ?? "#7c3aed";
   const accentTo = community?.accent_to ?? "#fb923c";
 
@@ -70,33 +114,129 @@ export default async function PremiumWelcomePage({
         </div>
 
         {status === "complete" ? (
-          <>
-            <h1
-              className="text-4xl font-semibold md:text-5xl"
-              style={{ fontFamily: "var(--font-display)" }}
-            >
-              Welcome to{" "}
-              <span
-                className="bg-clip-text text-transparent"
-                style={{
-                  backgroundImage: `linear-gradient(90deg, ${accentFrom}, ${accentTo})`,
-                }}
+          isFounder ? (
+            <>
+              {/* Phase 5e: Founder celebration.
+                  When founderNumber is set, show the big slot reveal.
+                  When it's still null (webhook race), show a pending state
+                  that lets the fan refresh once the webhook lands. */}
+              {founderNumber !== null ? (
+                <>
+                  <p
+                    className="text-xs font-semibold uppercase tracking-[0.4em]"
+                    style={{
+                      color: accentFrom,
+                    }}
+                  >
+                    {fanFirstName
+                      ? `${fanFirstName}, you made it.`
+                      : "You made it."}
+                  </p>
+                  <h1
+                    className="mt-3 text-4xl font-semibold md:text-5xl"
+                    style={{ fontFamily: "var(--font-display)" }}
+                  >
+                    You&apos;re{" "}
+                    <span
+                      className="bg-clip-text text-transparent"
+                      style={{
+                        backgroundImage: `linear-gradient(90deg, ${accentFrom}, ${accentTo})`,
+                      }}
+                    >
+                      Founding Fan #{founderNumber}
+                    </span>
+                    .
+                  </h1>
+                  <p
+                    className="mt-5 text-9xl font-bold tabular-nums md:text-[10rem]"
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      backgroundImage: `linear-gradient(135deg, ${accentFrom}, ${accentTo})`,
+                      WebkitBackgroundClip: "text",
+                      WebkitTextFillColor: "transparent",
+                      backgroundClip: "text",
+                    }}
+                  >
+                    #{founderNumber}
+                  </p>
+                  <p className="mt-6 text-white/75">
+                    One of the first 100 paying fans of{" "}
+                    <span className="text-white">
+                      {community?.display_name ?? "this community"}
+                    </span>
+                    . Your {billingPeriod === "annual" ? "annual" : "monthly"}{" "}
+                    price is locked in — forever.
+                  </p>
+                  <div
+                    className="mx-auto mt-6 inline-flex items-center gap-3 rounded-full border px-5 py-2 text-xs font-semibold uppercase tracking-widest"
+                    style={{
+                      borderColor: `${accentFrom}55`,
+                      color: accentFrom,
+                      backgroundColor: "rgba(255,255,255,0.03)",
+                    }}
+                  >
+                    🌟 Founding Fan badge · +500 pts
+                  </div>
+                  {customerEmail && (
+                    <p className="mt-6 text-xs text-white/50">
+                      Receipt on its way to{" "}
+                      <span className="text-white/80">{customerEmail}</span>.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <h1
+                    className="text-4xl font-semibold md:text-5xl"
+                    style={{ fontFamily: "var(--font-display)" }}
+                  >
+                    Claiming your founder slot…
+                  </h1>
+                  <p className="mt-4 text-white/70">
+                    Stripe confirmed your payment and we&apos;re assigning your
+                    Founding Fan number. Refresh in a moment to see which slot
+                    you got — your badge and locked-in pricing are already
+                    yours.
+                  </p>
+                  {customerEmail && (
+                    <p className="mt-6 text-xs text-white/50">
+                      Receipt on its way to{" "}
+                      <span className="text-white/80">{customerEmail}</span>.
+                    </p>
+                  )}
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <h1
+                className="text-4xl font-semibold md:text-5xl"
+                style={{ fontFamily: "var(--font-display)" }}
               >
-                {community?.display_name ?? "the community"} Premium
-              </span>
-              .
-            </h1>
-            <p className="mt-4 text-white/70">
-              {isFounder
-                ? "You're a Founding Fan — thanks for being one of the first 100. Your price is locked in forever."
-                : billingPeriod === "annual"
+                Welcome to{" "}
+                <span
+                  className="bg-clip-text text-transparent"
+                  style={{
+                    backgroundImage: `linear-gradient(90deg, ${accentFrom}, ${accentTo})`,
+                  }}
+                >
+                  {community?.display_name ?? "the community"} Premium
+                </span>
+                .
+              </h1>
+              <p className="mt-4 text-white/70">
+                {billingPeriod === "annual"
                   ? "Your annual membership is active."
                   : "Your monthly membership is active."}{" "}
-              {customerEmail && (
-                <>A receipt is on its way to <span className="text-white">{customerEmail}</span>.</>
-              )}
-            </p>
-          </>
+                {customerEmail && (
+                  <>
+                    A receipt is on its way to{" "}
+                    <span className="text-white">{customerEmail}</span>.
+                  </>
+                )}
+              </p>
+            </>
+          )
         ) : (
           <>
             <h1
@@ -131,9 +271,9 @@ export default async function PremiumWelcomePage({
           </Link>
         </div>
 
-        {isFounder && status === "complete" && (
+        {isFounder && status === "complete" && founderNumber !== null && (
           <p className="mt-12 text-xs uppercase tracking-widest text-white/45">
-            🌟 Founding Fan — locked-in pricing for life
+            Locked-in pricing for life
           </p>
         )}
       </div>
