@@ -23,15 +23,24 @@ function normalizeVisibility(raw: FormDataEntryValue | null): Visibility {
   return "public";
 }
 
+function normalizeUrl(urlRaw: string): string | null {
+  const trimmed = urlRaw.trim();
+  return trimmed && /^https?:\/\//i.test(trimmed) ? trimmed : null;
+}
+
 export async function createPostAction(formData: FormData) {
   const artistSlug = String(formData.get("artist_slug") ?? "").trim();
   const body = String(formData.get("body") ?? "").trim();
   const imageUrlRaw = String(formData.get("image_url") ?? "").trim();
+  const videoUrlRaw = String(formData.get("video_url") ?? "").trim();
+  const videoPosterUrlRaw = String(formData.get("video_poster_url") ?? "").trim();
   if (!artistSlug || !body) return;
   if (body.length > 2000) return;
 
   const { supabase, userId } = await requireUser();
-  const imageUrl = imageUrlRaw && /^https?:\/\//i.test(imageUrlRaw) ? imageUrlRaw : null;
+  const imageUrl = normalizeUrl(imageUrlRaw);
+  const videoUrl = normalizeUrl(videoUrlRaw);
+  const videoPosterUrl = normalizeUrl(videoPosterUrlRaw);
 
   await supabase.from("community_posts").insert({
     artist_slug: artistSlug,
@@ -39,6 +48,8 @@ export async function createPostAction(formData: FormData) {
     kind: "post",
     body,
     image_url: imageUrl,
+    video_url: videoUrl,
+    video_poster_url: videoPosterUrl,
   });
 
   revalidatePath(`/artists/${artistSlug}/community`);
@@ -220,7 +231,7 @@ export async function submitEntryAction(formData: FormData) {
   if (!postId || !artistSlug || (!body && !imageUrlRaw)) return;
 
   const { supabase, userId } = await requireUser();
-  const imageUrl = imageUrlRaw && /^https?:\/\//i.test(imageUrlRaw) ? imageUrlRaw : null;
+  const imageUrl = normalizeUrl(imageUrlRaw);
 
   await supabase.from("community_challenge_entries").insert({
     post_id: postId,
@@ -242,7 +253,14 @@ export async function createAnnouncementAction(formData: FormData) {
   const body = String(formData.get("body") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
   const visibility = normalizeVisibility(formData.get("visibility"));
+  const imageUrlRaw = String(formData.get("image_url") ?? "").trim();
+  const videoUrlRaw = String(formData.get("video_url") ?? "").trim();
+  const videoPosterUrlRaw = String(formData.get("video_poster_url") ?? "").trim();
   if (!artistSlug || !body) return;
+
+  const imageUrl = normalizeUrl(imageUrlRaw);
+  const videoUrl = normalizeUrl(videoUrlRaw);
+  const videoPosterUrl = normalizeUrl(videoPosterUrlRaw);
 
   const admin = createAdminClient();
   await admin.from("community_posts").insert({
@@ -253,6 +271,9 @@ export async function createAnnouncementAction(formData: FormData) {
     body,
     pinned: true, // announcements are pinned by default
     visibility,
+    image_url: imageUrl,
+    video_url: videoUrl,
+    video_poster_url: videoPosterUrl,
   });
 
   revalidatePath(`/artists/${artistSlug}/community`);

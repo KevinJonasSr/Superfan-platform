@@ -134,13 +134,25 @@ export default function PostCard({
 
       <p className="whitespace-pre-wrap text-sm text-white/90">{post.body}</p>
 
-      {post.image_url && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={post.image_url}
-          alt=""
-          className="max-h-96 w-full rounded-2xl object-cover"
-        />
+      {post.video_url ? (
+        <video
+          controls
+          poster={post.video_poster_url ?? undefined}
+          preload="metadata"
+          playsInline
+          className="mt-3 w-full rounded-2xl border border-white/10"
+        >
+          <source src={post.video_url} />
+        </video>
+      ) : (
+        post.image_url && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={post.image_url}
+            alt=""
+            className="max-h-96 w-full rounded-2xl object-cover"
+          />
+        )
       )}
 
       {post.kind === "poll" && poll && (

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import ImageUploader from "@/components/image-uploader";
+import VideoUploader from "@/components/video-uploader";
 import {
   createAnnouncementAction,
   createChallengeAction,
@@ -219,6 +220,13 @@ export default function NewPostForm({
           bucket="community-uploads"
           name="image_url"
           label={kind === "challenge" ? "Add cover photo" : "Add photo"}
+        />
+      )}
+
+      {(kind === "post" || kind === "announcement") && (
+        <VideoUploader
+          key={uploaderKey}
+          label="Attach video (optional)"
         />
       )}
 
