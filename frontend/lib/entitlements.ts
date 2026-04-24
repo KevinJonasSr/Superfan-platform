@@ -99,17 +99,38 @@ export async function getViewerEntitlement(
  * the matrix of (viewer tier × content tag) so callers don't have to
  * re-derive it. Returns { allowed, reason } where reason is a short string
  * useful for analytics / paywall UX copy.
+ *
+ * Matrix:
+ * - 'public': always allowed
+ * - 'premium': allowed if viewer is premium/comped/past_due; else 'needs-premium'
+ *             or 'signed-out' if not authenticated
+ * - 'founder-only': allowed only if viewer has is_founder=true; else
+ *                   'needs-founder' if authenticated but not a founder, or
+ *                   'signed-out' if not authenticated
  */
 export function canAccess(
-  contentTier: "public" | "premium",
+  contentTier: "public" | "premium" | "founder-only",
   viewer: MembershipEntitlement | null,
-): { allowed: boolean; reason: "public" | "premium-member" | "needs-premium" | "signed-out" } {
+): {
+  allowed: boolean;
+  reason: "public" | "premium-member" | "founder-member" | "needs-premium" | "needs-founder" | "signed-out";
+} {
   if (contentTier === "public") {
     return { allowed: true, reason: "public" };
   }
+
   if (!viewer) {
     return { allowed: false, reason: "signed-out" };
   }
+
+  if (contentTier === "founder-only") {
+    if (viewer.isFounder) {
+      return { allowed: true, reason: "founder-member" };
+    }
+    return { allowed: false, reason: "needs-founder" };
+  }
+
+  // contentTier === "premium"
   if (viewer.isPremium) {
     return { allowed: true, reason: "premium-member" };
   }
