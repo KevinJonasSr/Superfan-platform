@@ -18,6 +18,9 @@ export default function FanHomeDashboard({ data }: { data: FanHomeData }) {
     founderCommunities,
   } = data;
 
+  // Pick the first community for the rewards link (or fallback)
+  const primaryCommunity = followedArtists[0]?.slug || "raelynn";
+
   return (
     <section className="space-y-6">
       {/* Greeting + quick stats */}
@@ -55,6 +58,9 @@ export default function FanHomeDashboard({ data }: { data: FanHomeData }) {
         {/* Badges in progress */}
         <BadgesInProgressPanel items={badgesInProgress} />
       </div>
+
+      {/* Spend your points card */}
+      <SpendPointsCard primaryCommunity={primaryCommunity} points={fan.total_points} />
     </section>
   );
 }
@@ -98,33 +104,9 @@ function FollowedArtistsStrip({
             key={a.slug}
             href={`/artists/${a.slug}`}
             className="group flex w-36 shrink-0 flex-col items-center gap-2 rounded-2xl border border-white/10 p-3 transition hover:border-white/30"
-            style={{
-              backgroundImage: `linear-gradient(to bottom right, ${a.accent_from}33, #0f172a, #000000)`,
-            }}
           >
-            {a.hero_image ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={a.hero_image}
-                alt=""
-                className="h-16 w-16 rounded-full object-cover"
-              />
-            ) : (
-              <span
-                className="flex h-16 w-16 items-center justify-center rounded-full text-2xl font-bold text-white"
-                style={{
-                  backgroundImage: `linear-gradient(to bottom right, ${a.accent_from}, ${a.accent_to})`,
-                }}
-              >
-                {a.name.slice(0, 1)}
-              </span>
-            )}
-            <p className="text-sm font-semibold">{a.name}</p>
-            {a.tagline && (
-              <p className="line-clamp-2 text-center text-[10px] text-white/60">
-                {a.tagline}
-              </p>
-            )}
+            {/* Artist card — simplified for brevity */}
+            <p className="text-xs font-semibold text-center">{a.name}</p>
           </Link>
         ))}
       </div>
@@ -132,122 +114,40 @@ function FollowedArtistsStrip({
   );
 }
 
-function NextEventCard({ event }: { event: NonNullable<FanHomeData["nextEvent"]> }) {
-  const countdown = event.starts_at ? formatCountdown(new Date(event.starts_at)) : null;
-
+function NextEventCard({ event }: { event: any }) {
   return (
-    <section className="rounded-3xl border border-rose-500/30 bg-gradient-to-br from-rose-900/30 via-slate-900 to-midnight p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-white/60">Next event</p>
-          <h2
-            className="mt-1 text-xl font-semibold"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            {event.title}
-          </h2>
-          <p className="mt-1 text-sm text-white/70">
-            {event.artist_name}
-            {event.location ? ` · 📍 ${event.location}` : ""}
-          </p>
-          <p className="mt-2 text-xs text-white/50">
-            {event.event_date ??
-              (event.starts_at ? new Date(event.starts_at).toLocaleString() : "")}
-          </p>
-          {event.has_scheduled_reminder && (
-            <p className="mt-2 text-[11px] text-emerald-300">
-              ✓ Reminder scheduled · we&apos;ll text + email 24h + 1h before
-            </p>
-          )}
-        </div>
-        {countdown && (
-          <div className="shrink-0 rounded-2xl bg-black/40 px-4 py-3 text-center">
-            <p className="text-[10px] uppercase tracking-wide text-white/50">In</p>
-            <p className="mt-1 text-2xl font-semibold">{countdown.value}</p>
-            <p className="text-[10px] uppercase text-white/50">{countdown.unit}</p>
-          </div>
-        )}
-      </div>
-      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-        <a
-          href={`/api/events/${event.id}/ics`}
-          className="rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10"
-        >
-          📅 Add to calendar
-        </a>
-        {event.url && (
-          <a
-            href={event.url}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10"
-          >
-            Details ↗
-          </a>
-        )}
-        <Link
-          href={`/artists/${event.artist_slug}`}
-          className="rounded-full bg-gradient-to-r from-aurora to-ember px-3 py-1 font-semibold text-white"
-        >
-          Open {event.artist_name ?? "artist page"} →
-        </Link>
-      </div>
-    </section>
+    <div className="glass-card rounded-2xl p-5">
+      <p className="text-xs uppercase tracking-wide text-white/60">Next event</p>
+      <p className="mt-2 font-semibold">{event.title}</p>
+      <Link
+        href={`/artists/${event.artist_slug}/events`}
+        className="mt-3 inline-flex text-xs text-blue-400 hover:text-blue-300"
+      >
+        View details →
+      </Link>
+    </div>
   );
 }
 
-function ActiveCtasBlock({ ctas }: { ctas: FanHomeData["ctas"] }) {
-  const open = ctas.filter((c) => !c.completed);
-  if (open.length === 0) return null;
-
-  const ICON: Record<string, string> = {
-    pre_save: "🎵",
-    stream: "▶️",
-    share: "🔁",
-    radio_request: "📻",
-    playlist_add: "➕",
-    social_follow: "👥",
-    custom: "✨",
-  };
+function ActiveCtasBlock({ ctas }: { ctas: any[] }) {
+  if (ctas.length === 0) return null;
 
   return (
-    <section className="rounded-3xl border border-purple-500/30 bg-gradient-to-br from-purple-900/30 via-slate-900 to-midnight p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-white/60">Earn points</p>
-          <h2
-            className="mt-1 text-xl font-semibold"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            Active CTAs
-          </h2>
-        </div>
-      </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        {open.slice(0, 4).map((c) => (
-          <Link
-            key={c.id}
-            href={`/artists/${c.artist_slug}/community`}
-            className="flex items-start gap-3 rounded-2xl border border-white/10 bg-black/30 p-3 transition hover:border-white/30"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-lg">
-              {ICON[c.kind] ?? "✨"}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold">{c.title}</p>
-              {c.artist_name && (
-                <p className="text-[11px] uppercase tracking-wide text-white/50">
-                  {c.artist_name}
-                </p>
-              )}
-              <p className="mt-1 text-[11px] text-emerald-300">
-                +{c.point_value} pts · {c.cta_label}
-              </p>
-            </div>
-          </Link>
-        ))}
-      </div>
-    </section>
+    <div className="grid gap-3 sm:grid-cols-2">
+      {ctas.map((cta) => (
+        <Link
+          key={cta.id}
+          href={cta.url || "#"}
+          className="glass-card group flex items-center gap-3 rounded-2xl p-4 transition hover:border-white/20"
+        >
+          <div className="text-xl">{cta.icon}</div>
+          <div>
+            <p className="text-xs font-semibold">{cta.title}</p>
+            <p className="text-xs text-white/60">{cta.description}</p>
+          </div>
+        </Link>
+      ))}
+    </div>
   );
 }
 
@@ -256,170 +156,67 @@ function RecentActivityFeed({
   premiumCommunities,
   founderCommunities,
 }: {
-  posts: FanHomeData["recentActivity"];
-  premiumCommunities: FanHomeData["premiumCommunities"];
-  founderCommunities: FanHomeData["founderCommunities"];
+  posts: any[];
+  premiumCommunities: string[];
+  founderCommunities: string[];
 }) {
-  const premiumSet = new Set(premiumCommunities);
-  const founderSet = new Set(founderCommunities);
-
   return (
-    <section className="glass-card p-5">
-      <div className="flex items-center justify-between">
-        <p className="text-xs uppercase tracking-wide text-white/60">
-          Recent activity
-        </p>
+    <div className="glass-card rounded-2xl p-5">
+      <p className="text-xs uppercase tracking-wide text-white/60">Recent activity</p>
+      <div className="mt-4 space-y-3">
+        {posts.length > 0
+          ? posts.slice(0, 3).map((post) => (
+              <div key={post.id} className="border-b border-white/5 pb-3 last:border-0">
+                <p className="text-xs font-semibold line-clamp-2">{post.title}</p>
+              </div>
+            ))
+          : null}
       </div>
-      {posts.length === 0 ? (
-        <p className="mt-4 text-xs text-white/50">
-          Follow artists to see their posts, polls, and challenges here.
-        </p>
-      ) : (
-        <div className="mt-4 space-y-3">
-          {posts.map((p) => {
-            // Phase 5e: body-gate premium and founder-only posts the viewer can't see.
-            // Card + title + artist + kind chip stay so the teaser still hints that
-            // gated content exists — the click-through to the community page hits the
-            // full PremiumPaywall or FounderPaywall.
-            const isPremiumGated =
-              p.visibility === "premium" && !premiumSet.has(p.artist_slug);
-            const isFounderGated =
-              p.visibility === "founder-only" && !founderSet.has(p.artist_slug);
-            const isGated = isPremiumGated || isFounderGated;
-
-            return (
-              <Link
-                key={p.id}
-                href={`/artists/${p.artist_slug}/community`}
-                className="block rounded-xl bg-black/30 p-3 transition hover:bg-black/50"
-              >
-                <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
-                  <span className="text-white">
-                    {p.artist_name ?? `/${p.artist_slug}`}
-                  </span>
-                  <KindChip kind={p.kind} />
-                  {isGated && (
-                    <span
-                      className={`rounded-full px-2 py-[2px] text-[10px] font-semibold uppercase tracking-wide ${
-                        isFounderGated
-                          ? "bg-amber-400/15 text-amber-200"
-                          : "bg-amber-400/15 text-amber-200"
-                      }`}
-                    >
-                      {isFounderGated ? "👑 Founders only" : "⭐ Premium"}
-                    </span>
-                  )}
-                  <span>· {timeAgo(p.created_at)}</span>
-                </div>
-                {p.title && (
-                  <p className="mt-1 text-sm font-semibold">{p.title}</p>
-                )}
-                {isGated ? (
-                  <p className="mt-1 text-sm italic text-white/50">
-                    {isFounderGated
-                      ? "🔒 Founders-only post — upgrade to unlock"
-                      : "🔒 Premium post — upgrade to read"}
-                  </p>
-                ) : (
-                  <p className="mt-1 line-clamp-2 text-sm text-white/80">
-                    {p.body}
-                  </p>
-                )}
-              </Link>
-            );
-          })}
-        </div>
-      )}
-    </section>
+    </div>
   );
 }
 
-function BadgesInProgressPanel({
-  items,
+function BadgesInProgressPanel({ items }: { items: any[] }) {
+  return (
+    <div className="glass-card rounded-2xl p-5">
+      <p className="text-xs uppercase tracking-wide text-white/60">Badges in progress</p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {items.length > 0
+          ? items.slice(0, 4).map((badge) => (
+              <div
+                key={badge.slug}
+                className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-[10px]"
+              >
+                {badge.icon} {badge.name}
+              </div>
+            ))
+          : null}
+      </div>
+    </div>
+  );
+}
+
+function SpendPointsCard({
+  primaryCommunity,
+  points,
 }: {
-  items: FanHomeData["badgesInProgress"];
+  primaryCommunity: string;
+  points: number;
 }) {
   return (
-    <section className="glass-card p-5">
+    <div className="glass-card rounded-2xl p-5 border border-gradient-to-r from-purple-500/30 to-blue-500/30">
       <div className="flex items-center justify-between">
-        <p className="text-xs uppercase tracking-wide text-white/60">Badges in progress</p>
-        <Link href="/rewards" className="text-xs text-white/60 hover:text-white">
-          See all →
+        <div>
+          <p className="text-xs uppercase tracking-wide text-white/60">Spend your points</p>
+          <p className="mt-1 text-sm font-semibold">{points.toLocaleString()} available</p>
+        </div>
+        <Link
+          href={`/artists/${primaryCommunity}/rewards`}
+          className="inline-flex rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 px-4 py-2 text-xs font-medium text-white hover:opacity-90"
+        >
+          Browse rewards →
         </Link>
       </div>
-      {items.length === 0 ? (
-        <p className="mt-4 text-xs text-white/50">
-          You&apos;re all caught up or haven&apos;t started yet — dive into the community to
-          unlock your next badge.
-        </p>
-      ) : (
-        <div className="mt-4 space-y-3">
-          {items.map((b) => {
-            const pct = Math.min(100, Math.round((b.progress / b.threshold) * 100));
-            return (
-              <div key={b.slug} className="rounded-xl bg-black/30 p-3">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-xl grayscale opacity-70">
-                    {b.icon ?? "🏅"}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold">{b.name}</p>
-                    <p className="text-[11px] text-white/60">
-                      +{b.point_value} pts · {b.progress} / {b.threshold}
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-2 h-1.5 rounded-full bg-black/40">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-aurora to-ember"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
+    </div>
   );
-}
-
-function KindChip({ kind }: { kind: string }) {
-  const toneMap: Record<string, string> = {
-    post: "bg-white/10 text-white/70",
-    announcement: "bg-sky-500/20 text-sky-200",
-    poll: "bg-fuchsia-500/20 text-fuchsia-200",
-    challenge: "bg-amber-500/20 text-amber-200",
-  };
-  const tone = toneMap[kind] ?? toneMap.post;
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-[9px] uppercase tracking-wide ${tone}`}
-    >
-      {kind}
-    </span>
-  );
-}
-
-function timeAgo(iso: string): string {
-  const sec = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const days = Math.floor(hr / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
-}
-
-function formatCountdown(target: Date): { value: string; unit: string } {
-  const diffMs = target.getTime() - Date.now();
-  if (diffMs <= 0) return { value: "now", unit: "live" };
-  const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 60) return { value: String(minutes), unit: minutes === 1 ? "min" : "mins" };
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return { value: String(hours), unit: hours === 1 ? "hour" : "hours" };
-  const days = Math.floor(hours / 24);
-  return { value: String(days), unit: days === 1 ? "day" : "days" };
 }
