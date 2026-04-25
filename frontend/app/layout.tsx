@@ -6,10 +6,13 @@ import CookieBanner from "@/components/cookie-banner";
 import Footer from "@/components/footer";
 import InstallPrompt from "@/components/install-prompt";
 import PremiumBadge from "@/components/premium-badge";
+import AdminPill from "@/components/admin-pill";
+import UserMenu from "@/components/user-menu";
 import { createClient } from "@/lib/supabase/server";
 import { getUnreadCount } from "@/lib/data/notifications";
 import { getCurrentCommunityId } from "@/lib/community";
 import { getEntitlement } from "@/lib/entitlements";
+import { getAdminContext } from "@/lib/admin";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-body" });
 const spaceGrotesk = Space_Grotesk({
@@ -114,13 +117,16 @@ export default async function RootLayout({
   let isPremium = false;
   let isFounder = false;
   let founderNumber: number | null = null;
+  let isAdmin = false;
   if (user) {
     try {
-      const [unreadResult, communityId] = await Promise.all([
+      const [unreadResult, communityId, adminCtx] = await Promise.all([
         getUnreadCount().catch(() => 0),
         getCurrentCommunityId().catch(() => null),
+        getAdminContext().catch(() => null),
       ]);
       unread = unreadResult;
+      isAdmin = adminCtx !== null;
       if (communityId) {
         const ent = await getEntitlement(user.id, communityId).catch(() => null);
         if (ent) {
@@ -171,6 +177,7 @@ export default async function RootLayout({
                   isFounder={isFounder}
                   founderNumber={founderNumber}
                 />
+                <AdminPill show={isAdmin} />
                 <Link
                   href="/inbox"
                   aria-label={
@@ -188,35 +195,7 @@ export default async function RootLayout({
                     </span>
                   )}
                 </Link>
-                <Link
-                  href="/rewards"
-                  className="hidden items-center gap-2 rounded-full border border-white/15 bg-black/30 px-2 py-1 text-xs text-white/80 hover:bg-white/10 sm:inline-flex"
-                  title={user.email ?? undefined}
-                >
-                  {user.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={user.avatar_url}
-                      alt=""
-                      className="h-6 w-6 rounded-full object-cover"
-                    />
-                  ) : (
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-aurora to-ember text-[10px] font-bold">
-                      {(user.first_name?.[0] ?? user.email?.[0] ?? "F").toUpperCase()}
-                    </span>
-                  )}
-                  <span>
-                    {user.first_name ?? user.email?.split("@")[0] ?? "Signed in"}
-                  </span>
-                </Link>
-                <form action="/auth/signout" method="post">
-                  <button
-                    type="submit"
-                    className="rounded-full border border-white/20 px-4 py-2 text-sm font-medium text-white/80 hover:bg-white/10"
-                  >
-                    Sign out
-                  </button>
-                </form>
+                <UserMenu fan={user} isAdmin={isAdmin} unreadCount={unread} />
               </div>
             ) : (
               <div className="flex items-center gap-2">
