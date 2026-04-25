@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getAdminContext } from "@/lib/admin";
 import { getCommunity } from "@/lib/community";
@@ -13,6 +12,7 @@ const adminNav = [
   { href: "/admin/challenges", label: "Challenges" },
   { href: "/admin/offers", label: "Offers" },
   { href: "/admin/fans", label: "Fans" },
+  { href: "/admin/founders", label: "Founders" },
   { href: "/admin/policies", label: "Policies" },
 ];
 
@@ -24,18 +24,12 @@ export default async function AdminLayout({
   const ctx = await getAdminContext();
   if (!ctx) redirect("/login?next=/admin");
 
-  // Check which pathname we're on — if the user hasn't picked a community
-  // yet AND they're not already on the switcher page, bounce them there.
-  const h = await headers();
-  const pathname =
-    h.get("x-invoke-path") ?? h.get("next-url") ?? h.get("referer") ?? "";
-  const isOnSwitcher = pathname.includes("/admin/communities");
-  const needsToPick =
-    (ctx.isSuperAdmin || ctx.communities.length > 1) &&
-    !ctx.currentCommunityId &&
-    !isOnSwitcher;
-  if (needsToPick) redirect("/admin/communities");
-
+  // Phase 5e: previously this layout auto-redirected super-admins without
+  // a picked community to /admin/communities. The pathname detection it
+  // relied on (x-invoke-path / next-url) is unreliable in Next.js 16 and
+  // caused a redirect loop. Now we just render whichever admin page the
+  // user navigated to; the picker at /admin/communities is reachable via
+  // the breadcrumb chip below or a direct link in the nav.
   const currentCommunity = ctx.currentCommunityId
     ? await getCommunity(ctx.currentCommunityId)
     : null;
