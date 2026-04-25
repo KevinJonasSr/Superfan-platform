@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getAdminContext } from "@/lib/admin";
 import { getCommunity } from "@/lib/community";
+import { countPendingRedemptions } from "@/lib/data/rewards";
 
 const adminNav = [
   { href: "/admin", label: "Overview" },
@@ -11,8 +13,9 @@ const adminNav = [
   { href: "/admin/community", label: "Community" },
   { href: "/admin/challenges", label: "Challenges" },
   { href: "/admin/offers", label: "Offers" },
+  { href: "/admin/rewards", label: "Rewards" },
+  { href: "/admin/redemptions", label: "Redemptions" },
   { href: "/admin/fans", label: "Fans" },
-  { href: "/admin/founders", label: "Founders" },
   { href: "/admin/policies", label: "Policies" },
 ];
 
@@ -24,15 +27,27 @@ export default async function AdminLayout({
   const ctx = await getAdminContext();
   if (!ctx) redirect("/login?next=/admin");
 
-  // Phase 5e: previously this layout auto-redirected super-admins without
-  // a picked community to /admin/communities. The pathname detection it
-  // relied on (x-invoke-path / next-url) is unreliable in Next.js 16 and
-  // caused a redirect loop. Now we just render whichever admin page the
-  // user navigated to; the picker at /admin/communities is reachable via
-  // the breadcrumb chip below or a direct link in the nav.
+  // Check which pathname we're on — if the user hasn't picked a community
+  // yet AND they're not already on the switcher page, bounce them there.
+  const h = await headers();
+  const pathname =
+    h.get("x-invoke-path") ?? h.get("next-url") ?? h.get("referer") ?? "";
+  const isOnSwitcher = pathname.includes("/admin/communities");
+  const needsToPick =
+    (ctx.isSuperAdmin || ctx.communities.length > 1) &&
+    !ctx.currentCommunityId &&
+    !isOnSwitcher;
+  if (needsToPick) redirect("/admin/communities");
+
   const currentCommunity = ctx.currentCommunityId
     ? await getCommunity(ctx.currentCommunityId)
     : null;
+
+  // Count pending redemptions for badge
+  let pendingCount = 0;
+  if (ctx.currentCommunityId) {
+    pendingCount = await countPendingRedemptions(ctx.currentCommunityId);
+  }
 
   return (
     <div className="min-h-screen bg-midnight">
@@ -74,19 +89,32 @@ export default async function AdminLayout({
               </span>
             )}
           </div>
-          <nav className="flex flex-wrap items-center gap-1 text-sm text-white/70">
-            {adminNav.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="rounded-full px-3 py-1.5 hover:bg-white/10 hover:text-white"
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
+          <Link
+            href="/"
+            className="text-xs text-white/60 hover:text-white"
+          >
+            ← Back to fan site
+          </Link>
         </div>
-        {children}
+
+        <nav className="mb-8 flex flex-wrap gap-2">
+          {adminNav.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="relative inline-flex rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-white/60 hover:border-white/20 hover:text-white"
+            >
+              {item.label}
+              {item.href === "/admin/redemptions" && pendingCount > 0 && (
+                <span className="absolute right-0 top-0 inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white translate-x-1 -translate-y-1">
+                  {pendingCount > 9 ? "9+" : pendingCount}
+                </span>
+              )}
+            </Link>
+          ))}
+        </nav>
+
+        <main>{children}</main>
       </div>
     </div>
   );
