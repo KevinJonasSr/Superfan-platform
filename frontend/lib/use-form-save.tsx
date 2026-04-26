@@ -44,6 +44,11 @@ export interface UseFormSaveOptions {
  * it was 5xx, and retry with backoff. After all retries fail, the user
  * sees a real error instead of a fake success.
  *
+ * `submit` returns the action's return value (typed via the generic), so
+ * callers can branch on business-logic results like `{ success }` /
+ * `{ error }` without needing extra plumbing. Returns `undefined` if all
+ * retries failed (status will be "error" in that case).
+ *
  * Usage:
  *
  * ```tsx
@@ -55,7 +60,8 @@ export interface UseFormSaveOptions {
  *   e.preventDefault();
  *   const fd = new FormData(e.currentTarget);
  *   fd.set("custom_field", customState);
- *   await submit(myServerAction, fd);
+ *   const result = await submit(myServerAction, fd);
+ *   if (result?.success) router.push("/somewhere");
  * }
  *
  * return (
@@ -78,10 +84,10 @@ export function useFormSave(options: UseFormSaveOptions = {}) {
   const [status, setStatus] = useState<SaveStatus>({ kind: "idle" });
 
   const submit = useCallback(
-    async (
-      action: (formData: FormData) => Promise<unknown> | unknown,
+    async function submitAction<T>(
+      action: (formData: FormData) => Promise<T> | T,
       formData: FormData,
-    ) => {
+    ): Promise<T | undefined> {
       const probePath =
         path ??
         (typeof window !== "undefined" ? window.location.pathname : "");
@@ -90,7 +96,11 @@ export function useFormSave(options: UseFormSaveOptions = {}) {
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         setStatus({ kind: "saving", attempt });
         try {
-          await callWithFetchProbe(action, formData, probePath);
+          const result = await callWithFetchProbe<T>(
+            action,
+            formData,
+            probePath,
+          );
           setStatus({ kind: "saved" });
           if (onSuccess) {
             try {
@@ -103,7 +113,7 @@ export function useFormSave(options: UseFormSaveOptions = {}) {
           setTimeout(() => {
             setStatus((s) => (s.kind === "saved" ? { kind: "idle" } : s));
           }, successTimeoutMs);
-          return;
+          return result;
         } catch (err) {
           lastError = err;
           if (attempt < maxAttempts) {
@@ -120,6 +130,7 @@ export function useFormSave(options: UseFormSaveOptions = {}) {
             ? lastError.message
             : `Save failed after ${maxAttempts} attempts. Try again in a moment.`,
       });
+      return undefined;
     },
     [path, maxAttempts, successTimeoutMs, backoffMs, onSuccess],
   );
@@ -134,13 +145,13 @@ export function useFormSave(options: UseFormSaveOptions = {}) {
 /**
  * Call the action while monkey-patching window.fetch to spy on the actual
  * Server Action response status. If the POST returned ≥ 500, throw so the
- * retry loop picks it up.
+ * retry loop picks it up. Returns whatever the action returned on success.
  */
-async function callWithFetchProbe(
-  action: (formData: FormData) => Promise<unknown> | unknown,
+async function callWithFetchProbe<T>(
+  action: (formData: FormData) => Promise<T> | T,
   formData: FormData,
   pathHint: string,
-) {
+): Promise<T> {
   let lastStatus: number | null = null;
   const origFetch = window.fetch;
   window.fetch = async function (...args) {
@@ -158,10 +169,11 @@ async function callWithFetchProbe(
     return res;
   };
   try {
-    await action(formData);
+    const result = await action(formData);
     if (lastStatus !== null && lastStatus >= 500) {
       throw new Error(`Server returned ${lastStatus}`);
     }
+    return result;
   } finally {
     window.fetch = origFetch;
   }
