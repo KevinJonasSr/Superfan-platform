@@ -31,9 +31,16 @@ export default function ArtistEditForm({
   const [accentTo, setAccentTo] = useState(initial.accentTo);
   const [submitting, setSubmitting] = useState(false);
 
-  async function handleSubmit(formData: FormData) {
+  // Use a plain onSubmit handler (instead of <form action={fn}>) so the submit
+  // event is reliably intercepted by React. Next.js 16's client-action form
+  // pattern is currently flaky for us — clicks were silently no-op'ing because
+  // React wasn't preventing native submission to the `javascript:throw…`
+  // sentinel. Plain onSubmit + manual FormData(e.currentTarget) sidesteps it.
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
     setSubmitting(true);
     try {
+      const formData = new FormData(e.currentTarget);
       formData.set("hero_image", heroImage ?? "");
       formData.set("accent_from", accentFrom);
       formData.set("accent_to", accentTo);
@@ -45,9 +52,8 @@ export default function ArtistEditForm({
   }
 
   return (
-    <form action={handleSubmit} className="glass-card space-y-4 p-5">
+    <form onSubmit={handleSubmit} className="glass-card space-y-4 p-5">
       <input type="hidden" name="slug" value={slug} />
-
       <div className="grid gap-3 md:grid-cols-2">
         <Field label="Display name">
           <input
@@ -66,7 +72,6 @@ export default function ArtistEditForm({
           />
         </Field>
       </div>
-
       <Field label="Bio">
         <textarea
           name="bio"
@@ -76,7 +81,6 @@ export default function ArtistEditForm({
           className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
         />
       </Field>
-
       <Field label="Hero image">
         <ImageUploader
           bucket="community-uploads"
@@ -86,7 +90,6 @@ export default function ArtistEditForm({
           onUploaded={setHeroImage}
         />
       </Field>
-
       <div className="grid gap-3 md:grid-cols-4">
         <Field label="Accent from">
           <input
@@ -121,11 +124,12 @@ export default function ArtistEditForm({
           />
         </Field>
       </div>
-
       {/* Live preview of accent gradient */}
       <div
         className="rounded-2xl border border-white/10 p-4"
-        style={{ backgroundImage: `linear-gradient(to bottom right, ${accentFrom}66, #0f172a, #000000)` }}
+        style={{
+          backgroundImage: `linear-gradient(to bottom right, ${accentFrom}66, #0f172a, #000000)`
+        }}
       >
         <p className="text-xs uppercase tracking-[0.3em] text-white/60">{initial.genresText}</p>
         <p
@@ -142,7 +146,6 @@ export default function ArtistEditForm({
           CTA preview
         </span>
       </div>
-
       <Field label="Social links">
         <textarea
           name="social"
@@ -152,7 +155,6 @@ export default function ArtistEditForm({
           className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
         />
       </Field>
-
       <div className="flex items-center justify-between pt-2">
         <label className="flex items-center gap-2 text-xs text-white/70">
           <input
