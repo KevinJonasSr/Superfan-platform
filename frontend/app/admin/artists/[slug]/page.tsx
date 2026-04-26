@@ -4,8 +4,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { listEventsForAdmin } from "@/lib/data/artists";
 import { listRsvpsForEvent } from "@/lib/data/events";
 import ArtistEditForm from "./edit-form";
+import CreateEventForm from "./create-event-form";
 import {
-  createEventAction,
   deleteEventAction,
   sendReminderNowAction,
 } from "../actions";
@@ -104,12 +104,12 @@ export default async function AdminArtistEditPage({
         <p className="mt-1 text-xs text-white/60">
           Shown on the artist page. Set <span className="text-white/80">active = false</span> to hide without deleting.
         </p>
+
         <div className="mt-3 space-y-3">
           {events.length === 0 && <p className="text-xs text-white/50">No events yet.</p>}
           {events.map((e, i) => {
             const rsvps = rsvpListsByEvent[i] ?? [];
-            const atCap =
-              e.capacity != null && e.capacity > 0 && rsvps.length >= e.capacity;
+            const atCap = e.capacity != null && e.capacity > 0 && rsvps.length >= e.capacity;
             const reminders = remindersByEvent.get(e.id) ?? [];
             const rem24 = reminders.find((r) => r.kind === "reminder_24h");
             const rem1h = reminders.find((r) => r.kind === "reminder_1h");
@@ -180,11 +180,7 @@ export default async function AdminArtistEditPage({
                         >
                           {r.fan?.avatar_url ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={r.fan.avatar_url as string}
-                              alt=""
-                              className="h-4 w-4 rounded-full object-cover"
-                            />
+                            <img src={r.fan.avatar_url as string} alt="" className="h-4 w-4 rounded-full object-cover" />
                           ) : (
                             <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-br from-aurora to-ember text-[8px] font-bold">
                               {(r.fan?.first_name?.[0] ?? "F").toUpperCase()}
@@ -201,60 +197,7 @@ export default async function AdminArtistEditPage({
           })}
         </div>
 
-        <form action={createEventAction} className="mt-4 grid gap-2 md:grid-cols-2">
-          <input type="hidden" name="artist_slug" value={slug} />
-          <input
-            name="title"
-            required
-            placeholder="Event title"
-            className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
-          />
-          <input
-            name="starts_at"
-            type="datetime-local"
-            placeholder="Start date/time"
-            className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
-          />
-          <input
-            name="event_date"
-            placeholder="Display date (Mar 14 · 7 PM)"
-            className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
-          />
-          <input
-            name="location"
-            placeholder="Location (Nashville, TN)"
-            className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
-          />
-          <input
-            name="detail"
-            placeholder="Detail (Fan Engage members only)"
-            className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
-          />
-          <input
-            name="url"
-            placeholder="URL (ticket link / livestream)"
-            className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
-          />
-          <input
-            name="capacity"
-            type="number"
-            placeholder="Capacity (blank = unlimited)"
-            className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
-          />
-          <input
-            name="sort_order"
-            type="number"
-            defaultValue="0"
-            placeholder="Sort order"
-            className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
-          />
-          <button
-            type="submit"
-            className="rounded-full bg-gradient-to-r from-aurora to-ember px-4 py-2 text-sm font-semibold text-white md:col-span-2"
-          >
-            + Add event
-          </button>
-        </form>
+        <CreateEventForm slug={slug} />
       </section>
     </div>
   );
