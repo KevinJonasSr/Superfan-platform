@@ -6,6 +6,7 @@ import {
   adminDeletePostAction,
   adminTogglePinAction,
 } from "./actions";
+import ModerationButton from "./moderation-button";
 
 export const dynamic = "force-dynamic";
 
@@ -77,7 +78,6 @@ async function loadFeed() {
     ...(e as Omit<EntryRow, "fan_first_name">),
     fan_first_name: nameById.get(e.fan_id as string) ?? null,
   }));
-
   return { posts, comments, entries };
 }
 
@@ -165,19 +165,21 @@ export default async function AdminCommunityPage() {
                 <p className="line-clamp-3 text-sm text-white/80">{p.body}</p>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1">
-                <form action={adminTogglePinAction}>
-                  <input type="hidden" name="post_id" value={p.id} />
-                  <input type="hidden" name="currently_pinned" value={String(p.pinned)} />
-                  <button className="text-[11px] text-white/60 hover:text-white">
-                    {p.pinned ? "Unpin" : "Pin"}
-                  </button>
-                </form>
-                <form action={adminDeletePostAction}>
-                  <input type="hidden" name="post_id" value={p.id} />
-                  <button className="text-[11px] text-rose-300/80 hover:text-rose-300">
-                    Delete
-                  </button>
-                </form>
+                <ModerationButton
+                  action={adminTogglePinAction}
+                  fields={{
+                    post_id: p.id,
+                    currently_pinned: String(p.pinned),
+                  }}
+                  label={p.pinned ? "Unpin" : "Pin"}
+                />
+                <ModerationButton
+                  action={adminDeletePostAction}
+                  fields={{ post_id: p.id }}
+                  label="Delete"
+                  variant="delete"
+                  confirmMessage="Delete this post? This cannot be undone."
+                />
               </div>
             </div>
           ))}
@@ -210,12 +212,13 @@ export default async function AdminCommunityPage() {
                 </p>
                 <p className="mt-1 line-clamp-2 text-sm text-white/80">{c.body}</p>
               </div>
-              <form action={adminDeleteCommentAction}>
-                <input type="hidden" name="comment_id" value={c.id} />
-                <button className="text-[11px] text-rose-300/80 hover:text-rose-300">
-                  Delete
-                </button>
-              </form>
+              <ModerationButton
+                action={adminDeleteCommentAction}
+                fields={{ comment_id: c.id }}
+                label="Delete"
+                variant="delete"
+                confirmMessage="Delete this comment? This cannot be undone."
+              />
             </div>
           ))}
         </div>
@@ -257,12 +260,13 @@ export default async function AdminCommunityPage() {
                 </p>
                 {e.body && <p className="mt-1 line-clamp-2 text-sm text-white/80">{e.body}</p>}
               </div>
-              <form action={adminDeleteEntryAction}>
-                <input type="hidden" name="entry_id" value={e.id} />
-                <button className="text-[11px] text-rose-300/80 hover:text-rose-300">
-                  Delete
-                </button>
-              </form>
+              <ModerationButton
+                action={adminDeleteEntryAction}
+                fields={{ entry_id: e.id }}
+                label="Delete"
+                variant="delete"
+                confirmMessage="Delete this challenge entry? This cannot be undone."
+              />
             </div>
           ))}
         </div>
