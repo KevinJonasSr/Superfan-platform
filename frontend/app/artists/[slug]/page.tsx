@@ -115,7 +115,10 @@ export default async function ArtistPage({
             <img
               src={artist.heroImage}
               alt=""
-              className="absolute inset-0 h-full w-full object-cover"
+              // object-top keeps the subject's head visible — default object-cover
+              // centers the image and crops top + bottom equally, which slices off
+              // heads on portrait artist photos.
+              className="absolute inset-0 h-full w-full object-cover object-top"
               aria-hidden
             />
             {/* Dark gradient overlay so the title/CTAs stay legible regardless of the photo */}
