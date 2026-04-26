@@ -2,7 +2,7 @@
 
 Living document. Update this whenever a launch-blocking item is resolved or a new one is discovered. Grouped by category so blockers are easy to scan.
 
-Last updated: April 26, 2026 — useFormSave hook rolled out to most write surfaces (artist edit/create, rewards CRUD, redemption fulfill/refund, event create, community composer, community moderation, fan suspend) + hero image crop fixed (object-position center 30%)
+Last updated: April 26, 2026 — Fan Home now surfaces the next 3 upcoming events from any followed artist (no RSVP required) + Recent Activity renders kind chip + body fallback so all post types display, not just titled ones; admin events list gained a per-row ✏️ Edit affordance with a full inline form (title, dates, location, capacity, URL, sort order, active flag); useFormSave hook earlier rolled out to most write surfaces (artist edit/create, rewards CRUD, redemption fulfill/refund, event create, community composer, community moderation, fan suspend); hero image crop fixed (object-position center 30%)
 
 ---
 
@@ -208,6 +208,7 @@ import ModerationButton from "@/app/admin/community/moderation-button";
 - [ ] **Onboarding welcome email + SMS** — fire a welcome message right after signup
 - [ ] **Data export + delete-account** (CCPA/GDPR self-serve)
 - [ ] **Per-artist hero focal-point control** — currently every wide hero uses `objectPosition: center 30%` as a global default, which works for most portrait artist photos but not all (subjects framed lower than typical, group shots, landscape-oriented portraits, etc.). Add a `hero_focal_y` smallint column (0–100, default 30) to the `artists` table, surface it in the `/admin/artists/[slug]` edit form (a slider or a numeric input next to the hero uploader, ideally with a live preview rendering of the chosen crop), and read it in `frontend/app/artists/[slug]/page.tsx` as `style={{ objectPosition: \`center ${artist.heroFocalY ?? 30}%\` }}`. Optional: add `hero_focal_x` too if landscape photos ever need horizontal repositioning. Estimated work: ~1 hour (one small migration + one form field + one render-line change).
+- [ ] **Fan Home Recent Activity expansion** — the data layer (`frontend/lib/data/fan-home.ts`) already pulls the 5 most recent community posts from followed artists, but the dashboard (`frontend/components/fan-home-dashboard.tsx` `<RecentActivityFeed>`) only renders the top 3. Two related upgrades worth picking up post-launch: (1) bump the visible count to 5 — trivial change to `posts.slice(0, 3)` — and/or raise the data layer's `.limit(8)` if we want a deeper feed; (2) add a "View all activity →" link at the bottom of the card that routes to a new per-fan activity index page (e.g. `/activity` or `/feed`) showing every recent post across followed artists, paginated, with body bodies and reactions. The index page would basically be a cross-artist version of `/artists/[slug]/community`. Estimated work: ~2 hours for the link + index page; ~5 minutes for the count bump on its own.
 
 ---
 
@@ -230,3 +231,4 @@ Recorded for the paper trail:
 - Phase 5e — Founder-only tier + monthly credits + admin founder roster + analytics
 - Phase 6 — Rewards redemption (catalog + RPC + admin queue + fan UI) + Hero image upload + Public Founder Wall
 - Phase 7 — Save reliability (useFormSave + retry-on-503 + visible status across primary admin write surfaces)
+- Phase 8 — Fan Home discovery polish (top-3 upcoming events from any followed artist regardless of RSVP, Recent Activity kind chips + body fallback so non-titled posts surface, admin events list gained per-row ✏️ Edit with full inline form including active toggle)
