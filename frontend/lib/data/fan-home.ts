@@ -11,7 +11,13 @@ export interface FanHomeFollowedArtist {
   hero_image: string | null;
 }
 
-export interface FanHomeNextEvent {
+/**
+ * One upcoming event surfaced on Fan Home. Sourced from `artist_events`
+ * filtered to the fan's followed artists — RSVP is NOT required (the widget
+ * is a discovery surface, not a personal calendar). The `rsvped` flag lets
+ * the dashboard show a "✓ Going" indicator when the fan has already RSVPed.
+ */
+export interface FanHomeUpcomingEvent {
   id: string;
   artist_slug: string;
   artist_name: string | null;
@@ -20,8 +26,17 @@ export interface FanHomeNextEvent {
   event_date: string | null;
   location: string | null;
   url: string | null;
+  rsvped: boolean;
   has_scheduled_reminder: boolean;
 }
+
+/**
+ * @deprecated Back-compat shim — alias for `FanHomeUpcomingEvent`. New code
+ * should consume `upcomingEvents: FanHomeUpcomingEvent[]` instead. Kept so
+ * any older imports of `FanHomeNextEvent` continue to type-check during the
+ * dashboard rollout. Remove once all consumers have migrated.
+ */
+export type FanHomeNextEvent = FanHomeUpcomingEvent;
 
 export interface FanHomeCTA {
   id: string;
@@ -64,7 +79,20 @@ export interface FanHomeBadgeProgress {
 export interface FanHomeData {
   fan: FanProfile;
   followedArtists: FanHomeFollowedArtist[];
-  nextEvent: FanHomeNextEvent | null;
+  /**
+   * Next 3 upcoming public-tier events from any artist the fan follows.
+   * Sorted by `starts_at` ascending. Empty array if the fan follows no artists
+   * or none of the followed artists have upcoming public events.
+   */
+  upcomingEvents: FanHomeUpcomingEvent[];
+  /**
+   * @deprecated Back-compat shim — equivalent to `upcomingEvents[0] ?? null`.
+   * The previous Fan Home dashboard rendered a single "Next event" card; new
+   * code should use `upcomingEvents` instead. Kept so an older deployed
+   * dashboard build can still pull this prop while the new component rolls
+   * out. Remove once the component has migrated to `upcomingEvents`.
+   */
+  nextEvent: FanHomeUpcomingEvent | null;
   ctas: FanHomeCTA[];
   recentActivity: FanHomeActivityPost[];
   badgesInProgress: FanHomeBadgeProgress[];
@@ -104,6 +132,7 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
     .select("*")
     .eq("id", user.id)
     .maybeSingle();
+
   if (!fan) return null;
 
   // Followed artists (pull artist metadata in one go)
@@ -128,13 +157,38 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
         hero_image: string | null;
       }> });
 
-  // Next upcoming RSVPed event
+  // Upcoming public-tier events from followed artists. Discovery-style:
+  // RSVP not required. Limit slightly higher than 3 so we have headroom if
+  // any rows get filtered out post-fetch (e.g. starts_at NULL placeholders).
   const nowIso = new Date().toISOString();
-  const nextEventPromise = admin
+  const upcomingEventsPromise = followedSlugs.length
+    ? admin
+        .from("artist_events")
+        .select("id, artist_slug, title, starts_at, event_date, location, url, tier, active")
+        .in("artist_slug", followedSlugs)
+        .eq("active", true)
+        .eq("tier", "public")
+        .not("starts_at", "is", null)
+        .gt("starts_at", nowIso)
+        .order("starts_at", { ascending: true })
+        .limit(8)
+    : Promise.resolve({ data: [] as Array<{
+        id: string;
+        artist_slug: string;
+        title: string;
+        starts_at: string | null;
+        event_date: string | null;
+        location: string | null;
+        url: string | null;
+        tier: string;
+        active: boolean;
+      }> });
+
+  // Fan's RSVPs — used to compute `rsvped` flag on the upcoming events.
+  const myRsvpsPromise = admin
     .from("event_rsvps")
-    .select("event_id, artist_events(id, artist_slug, title, starts_at, event_date, location, url)")
-    .eq("fan_id", user.id)
-    .order("rsvp_at", { ascending: false });
+    .select("event_id")
+    .eq("fan_id", user.id);
 
   // Active fan_actions across followed artists (or all if none followed)
   let ctasQuery = admin
@@ -201,42 +255,48 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
     .from("badges")
     .select("slug, name, icon, point_value, category, threshold, sort_order")
     .order("sort_order");
+
   const earnedPromise = admin
     .from("fan_badges")
     .select("badge_slug")
     .eq("fan_id", user.id);
+
   const postCountPromise = admin
     .from("community_posts")
     .select("id", { count: "exact", head: true })
     .eq("author_id", user.id)
     .eq("kind", "post");
+
   const commentCountPromise = admin
     .from("community_comments")
     .select("id", { count: "exact", head: true })
     .eq("author_id", user.id);
+
   const pollVoteCountPromise = admin
     .from("community_poll_votes")
     .select("post_id", { count: "exact", head: true })
     .eq("fan_id", user.id);
+
   const entryCountPromise = admin
     .from("community_challenge_entries")
     .select("id", { count: "exact", head: true })
     .eq("fan_id", user.id);
+
   const referralCountPromise = admin
     .from("referrals")
     .select("id", { count: "exact", head: true })
     .eq("referrer_id", user.id)
     .eq("status", "verified");
 
-  // Reminder rows (to compute has_scheduled_reminder for nextEvent)
-  // Will be filtered client-side using the eventual nextEvent id.
+  // Reminder rows — used to compute has_scheduled_reminder per upcoming event.
   const remindersPromise = admin
     .from("event_reminders")
     .select("event_id, kind");
 
   const [
     artistsRes,
-    nextEventRes,
+    upcomingEventsRes,
+    myRsvpsRes,
     ctasRes,
     completionsRes,
     activityRes,
@@ -252,7 +312,8 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
     founderCommunitiesRes,
   ] = await Promise.all([
     artistsPromise,
-    nextEventPromise,
+    upcomingEventsPromise,
+    myRsvpsPromise,
     ctasPromise,
     completionsPromise,
     activityPromise,
@@ -267,6 +328,7 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
     premiumCommunitiesPromise,
     founderCommunitiesPromise,
   ]);
+
   const premiumCommunities = ((premiumCommunitiesRes.data ?? []) as Array<{
     community_id: string;
   }>).map((r) => r.community_id);
@@ -277,74 +339,44 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
   const followedArtists = (artistsRes.data ?? []) as FanHomeFollowedArtist[];
   const artistNameBySlug = new Map(followedArtists.map((a) => [a.slug, a.name]));
 
-  // Next event = soonest future starts_at across all fan's RSVPs
-  type RsvpRow = {
-    event_id: string;
-    artist_events:
-      | {
-          id: string;
-          artist_slug: string;
-          title: string;
-          starts_at: string | null;
-          event_date: string | null;
-          location: string | null;
-          url: string | null;
-        }
-      | Array<{
-          id: string;
-          artist_slug: string;
-          title: string;
-          starts_at: string | null;
-          event_date: string | null;
-          location: string | null;
-          url: string | null;
-        }>
-      | null;
-  };
-  const upcoming = (nextEventRes.data ?? [])
-    .map((r) => {
-      const row = r as RsvpRow;
-      const e = Array.isArray(row.artist_events) ? row.artist_events[0] : row.artist_events;
-      return e;
-    })
-    .filter(
-      (e): e is NonNullable<typeof e> =>
-        e !== null && typeof e !== "undefined" && e.starts_at !== null && e.starts_at > nowIso,
-    )
-    .sort((a, b) => (a.starts_at ?? "").localeCompare(b.starts_at ?? ""));
-  const nextEv = upcoming[0] ?? null;
-
-  // Fill artist_name — might not be in followedArtists map if fan RSVPed to
-  // an artist they aren't following.
-  let nextEvent: FanHomeNextEvent | null = null;
-  if (nextEv) {
-    let artistName = artistNameBySlug.get(nextEv.artist_slug) ?? null;
-    if (!artistName) {
-      const { data: a } = await admin
-        .from("artists")
-        .select("name")
-        .eq("slug", nextEv.artist_slug)
-        .maybeSingle();
-      artistName = (a?.name as string | null) ?? null;
-    }
-    const reminders = (remindersRes.data ?? []) as Array<{ event_id: string; kind: string }>;
-    const hasScheduled = reminders.some(
-      (r) =>
-        r.event_id === nextEv.id &&
-        (r.kind === "reminder_24h" || r.kind === "reminder_1h"),
-    );
-    nextEvent = {
-      id: nextEv.id,
-      artist_slug: nextEv.artist_slug,
-      artist_name: artistName,
-      title: nextEv.title,
-      starts_at: nextEv.starts_at,
-      event_date: nextEv.event_date,
-      location: nextEv.location,
-      url: nextEv.url,
-      has_scheduled_reminder: hasScheduled,
-    };
+  // Build the upcoming-events list. Limit to top 3 after applying any
+  // post-fetch filtering (none today, but headroom is cheap).
+  const myRsvpedIds = new Set(
+    ((myRsvpsRes.data ?? []) as Array<{ event_id: string }>).map((r) => r.event_id),
+  );
+  const reminders = (remindersRes.data ?? []) as Array<{ event_id: string; kind: string }>;
+  const remindersByEvent = new Map<string, Set<string>>();
+  for (const r of reminders) {
+    if (!remindersByEvent.has(r.event_id)) remindersByEvent.set(r.event_id, new Set());
+    remindersByEvent.get(r.event_id)!.add(r.kind);
   }
+
+  const upcomingEvents: FanHomeUpcomingEvent[] = ((upcomingEventsRes.data ?? []) as Array<{
+    id: string;
+    artist_slug: string;
+    title: string;
+    starts_at: string | null;
+    event_date: string | null;
+    location: string | null;
+    url: string | null;
+  }>)
+    .slice(0, 3)
+    .map((e) => {
+      const reminderKinds = remindersByEvent.get(e.id) ?? new Set<string>();
+      return {
+        id: e.id,
+        artist_slug: e.artist_slug,
+        artist_name: artistNameBySlug.get(e.artist_slug) ?? null,
+        title: e.title,
+        starts_at: e.starts_at,
+        event_date: e.event_date,
+        location: e.location,
+        url: e.url,
+        rsvped: myRsvpedIds.has(e.id),
+        has_scheduled_reminder:
+          reminderKinds.has("reminder_24h") || reminderKinds.has("reminder_1h"),
+      };
+    });
 
   const completedIds = new Set(
     (completionsRes.data ?? []).map((r) => r.action_id as string),
@@ -383,6 +415,7 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
       (authors ?? []).map((a) => [a.id as string, (a.first_name as string | null) ?? null]),
     );
   }
+
   const recentActivity: FanHomeActivityPost[] = ((activityRes.data ?? []) as Array<{
     id: string;
     artist_slug: string;
@@ -410,6 +443,7 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
   const earnedSet = new Set(
     (earnedRes.data ?? []).map((r) => r.badge_slug as string),
   );
+
   const progressBySlug: Record<string, number> = {
     "first-post": postCountRes.count ?? 0,
     "first-comment": commentCountRes.count ?? 0,
@@ -420,7 +454,9 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
     "referral-5": referralCountRes.count ?? 0,
     "referral-10": referralCountRes.count ?? 0,
   };
+
   const allBadges = ((badgesRes.data ?? []) as Array<Badge & { threshold: number | null; sort_order: number }>);
+
   const badgesInProgress: FanHomeBadgeProgress[] = allBadges
     .filter((b) => !earnedSet.has(b.slug) && typeof b.threshold === "number" && b.threshold > 0)
     .map((b) => ({
@@ -445,7 +481,10 @@ export async function getFanHomeData(): Promise<FanHomeData | null> {
   return {
     fan: fan as FanProfile,
     followedArtists,
-    nextEvent,
+    upcomingEvents,
+    // Back-compat: the previous dashboard renders the first upcoming event
+    // as its "Next event" card. Safe to drop once the component rolls out.
+    nextEvent: upcomingEvents[0] ?? null,
     ctas,
     recentActivity,
     badgesInProgress,
