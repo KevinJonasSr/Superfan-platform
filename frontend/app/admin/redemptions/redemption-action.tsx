@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useFormSave, SaveStatusIndicator } from "@/lib/use-form-save";
 import { markFulfilledAction, cancelRedemptionAction } from "./actions";
 
 interface RedemptionActionProps {
@@ -9,36 +11,53 @@ interface RedemptionActionProps {
   pointCost: number;
 }
 
+/**
+ * Fulfill / Refund buttons for a redemption row in the queue.
+ *
+ * Wrapped in useFormSave so each click gets retry-on-503 + visible status,
+ * and any business-logic error returned by the action ({ error: "..." }) is
+ * surfaced inline instead of silently failing.
+ */
 export default function RedemptionAction({
   redemptionId,
   fanId,
   pointCost,
 }: RedemptionActionProps) {
+  const router = useRouter();
   const [showNote, setShowNote] = useState(false);
   const [note, setNote] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [businessError, setBusinessError] = useState<string | null>(null);
+
+  const { status, invoke, submitting } = useFormSave({
+    onSuccess: () => router.refresh(),
+  });
 
   async function handleFulfill() {
-    setLoading(true);
-    const result = await markFulfilledAction(redemptionId, note);
-    setLoading(false);
-    if (result.success) {
+    setBusinessError(null);
+    const result = await invoke(() => markFulfilledAction(redemptionId, note));
+    if (result?.success) {
       setShowNote(false);
       setNote("");
+    } else if (result?.error) {
+      setBusinessError(result.error);
     }
   }
 
   async function handleCancel() {
     if (!confirm("Cancel this redemption? Points will be refunded.")) return;
-    setLoading(true);
-    const result = await cancelRedemptionAction(redemptionId, fanId, pointCost);
-    setLoading(false);
+    setBusinessError(null);
+    const result = await invoke(() =>
+      cancelRedemptionAction(redemptionId, fanId, pointCost),
+    );
+    if (result?.error) {
+      setBusinessError(result.error);
+    }
   }
 
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       {showNote ? (
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <input
             type="text"
             value={note}
@@ -47,15 +66,20 @@ export default function RedemptionAction({
             className="rounded-lg border border-white/10 bg-black/50 px-2 py-1 text-xs text-white placeholder-white/40 focus:border-white/30 focus:outline-none"
           />
           <button
+            type="button"
             onClick={handleFulfill}
-            disabled={loading}
+            disabled={submitting}
             className="rounded-lg bg-green-500/20 px-3 py-1 text-xs font-medium text-green-300 hover:bg-green-500/30 disabled:opacity-50"
           >
-            Done
+            {submitting ? "…" : "Done"}
           </button>
           <button
-            onClick={() => setShowNote(false)}
-            disabled={loading}
+            type="button"
+            onClick={() => {
+              setShowNote(false);
+              setBusinessError(null);
+            }}
+            disabled={submitting}
             className="rounded-lg border border-white/10 px-3 py-1 text-xs text-white/60 hover:bg-white/5 disabled:opacity-50"
           >
             Cancel
@@ -64,20 +88,31 @@ export default function RedemptionAction({
       ) : (
         <>
           <button
+            type="button"
             onClick={() => setShowNote(true)}
-            disabled={loading}
+            disabled={submitting}
             className="rounded-lg bg-green-500/20 px-3 py-1 text-xs font-medium text-green-300 hover:bg-green-500/30 disabled:opacity-50"
           >
             Fulfill
           </button>
           <button
+            type="button"
             onClick={handleCancel}
-            disabled={loading}
+            disabled={submitting}
             className="rounded-lg bg-red-500/20 px-3 py-1 text-xs font-medium text-red-300 hover:bg-red-500/30 disabled:opacity-50"
           >
-            Refund
+            {submitting ? "…" : "Refund"}
           </button>
         </>
+      )}
+      <SaveStatusIndicator status={status} className="text-[11px]" />
+      {businessError && (
+        <span
+          className="text-[11px] text-rose-300"
+          title={businessError}
+        >
+          ✗ {businessError}
+        </span>
       )}
     </div>
   );
