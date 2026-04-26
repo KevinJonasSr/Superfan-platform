@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { FanHomeData } from "@/lib/data/fan-home";
+import type { FanHomeData, FanHomeUpcomingEvent } from "@/lib/data/fan-home";
 
 /**
  * Personalized Fan Home dashboard — everything a signed-in fan sees at /
@@ -10,7 +10,7 @@ export default function FanHomeDashboard({ data }: { data: FanHomeData }) {
   const {
     fan,
     followedArtists,
-    nextEvent,
+    upcomingEvents,
     ctas,
     recentActivity,
     badgesInProgress,
@@ -41,8 +41,8 @@ export default function FanHomeDashboard({ data }: { data: FanHomeData }) {
       {/* Followed artists strip */}
       <FollowedArtistsStrip artists={followedArtists} />
 
-      {/* Next event */}
-      {nextEvent && <NextEventCard event={nextEvent} />}
+      {/* Upcoming events — top 3 from any followed artist */}
+      <UpcomingEventsList events={upcomingEvents} hasFollows={followedArtists.length > 0} />
 
       {/* Active CTAs */}
       <ActiveCtasBlock ctas={ctas} />
@@ -161,22 +161,81 @@ function FollowedArtistsStrip({
   );
 }
 
-function NextEventCard({ event }: { event: any }) {
+/**
+ * Renders up to 3 upcoming public-tier events from the fan's followed
+ * artists. Each row links through to the artist's events page where the
+ * fan can RSVP. The `rsvped` flag drives a subtle "✓ Going" indicator so
+ * RSVPed shows still feel personal.
+ */
+function UpcomingEventsList({
+  events,
+  hasFollows,
+}: {
+  events: FanHomeUpcomingEvent[];
+  hasFollows: boolean;
+}) {
+  // Empty state copy depends on why the list is empty:
+  //   - fan follows nobody → nudge to follow an artist
+  //   - fan follows artists but none have upcoming public events → say so
+  if (events.length === 0) {
+    return (
+      <div className="glass-card rounded-2xl p-5">
+        <p className="text-xs uppercase tracking-wide text-white/60">Upcoming</p>
+        <p className="mt-3 text-sm text-white/70">
+          {hasFollows
+            ? "No upcoming shows from your artists yet — check back soon."
+            : "Follow an artist to see their upcoming shows here."}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="glass-card rounded-2xl p-5">
-      <p className="text-xs uppercase tracking-wide text-white/60">Next event</p>
-      <p className="mt-2 font-semibold">{event.title}</p>
-      <Link
-        href={`/artists/${event.artist_slug}/events`}
-        className="mt-3 inline-flex text-xs text-blue-400 hover:text-blue-300"
-      >
-        View details →
-      </Link>
+      <div className="flex items-center justify-between">
+        <p className="text-xs uppercase tracking-wide text-white/60">
+          Upcoming · {events.length}
+        </p>
+      </div>
+      <ul className="mt-4 space-y-3">
+        {events.map((e) => (
+          <li key={e.id}>
+            <Link
+              href={`/artists/${e.artist_slug}`}
+              className="group flex items-start justify-between gap-3 rounded-xl bg-black/20 p-3 transition hover:bg-black/30"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] uppercase tracking-wide text-white/50">
+                  {e.event_date ?? "Date TBD"}
+                </p>
+                <p className="mt-1 line-clamp-2 text-sm font-semibold text-white">
+                  {e.title}
+                </p>
+                <p className="mt-1 text-xs text-white/60">
+                  {e.artist_name ? `${e.artist_name} · ` : ""}
+                  {e.location ? `📍 ${e.location}` : "Location TBA"}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                {e.rsvped ? (
+                  <span className="inline-flex rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+                    ✓ Going
+                  </span>
+                ) : (
+                  <span className="inline-flex text-[10px] text-white/50 group-hover:text-white/80">
+                    RSVP →
+                  </span>
+                )}
+              </div>
+            </Link>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
-function ActiveCtasBlock({ ctas }: { ctas: any[] }) {
+function ActiveCtasBlock({ ctas }: { ctas: FanHomeData["ctas"] }) {
   if (ctas.length === 0) return null;
   return (
     <div className="grid gap-3 sm:grid-cols-2">
@@ -186,7 +245,7 @@ function ActiveCtasBlock({ ctas }: { ctas: any[] }) {
           href={cta.url || "#"}
           className="glass-card group flex items-center gap-3 rounded-2xl p-4 transition hover:border-white/20"
         >
-          <div className="text-xl">{cta.icon}</div>
+          <div className="text-xl">{cta.kind === "share" ? "📣" : "✨"}</div>
           <div>
             <p className="text-xs font-semibold">{cta.title}</p>
             <p className="text-xs text-white/60">{cta.description}</p>
@@ -199,10 +258,8 @@ function ActiveCtasBlock({ ctas }: { ctas: any[] }) {
 
 function RecentActivityFeed({
   posts,
-  premiumCommunities,
-  founderCommunities,
 }: {
-  posts: any[];
+  posts: FanHomeData["recentActivity"];
   premiumCommunities: string[];
   founderCommunities: string[];
 }) {
@@ -220,7 +277,7 @@ function RecentActivityFeed({
   );
 }
 
-function BadgesInProgressPanel({ items }: { items: any[] }) {
+function BadgesInProgressPanel({ items }: { items: FanHomeData["badgesInProgress"] }) {
   return (
     <div className="glass-card rounded-2xl p-5">
       <p className="text-xs uppercase tracking-wide text-white/60">Badges in progress</p>
