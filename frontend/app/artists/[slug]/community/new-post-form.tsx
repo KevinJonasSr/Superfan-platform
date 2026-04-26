@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import ImageUploader from "@/components/image-uploader";
 import VideoUploader from "@/components/video-uploader";
+import { useFormSave, SaveStatusIndicator } from "@/lib/use-form-save";
 import {
   createAnnouncementAction,
   createChallengeAction,
@@ -21,13 +22,14 @@ export default function NewPostForm({
   isAdmin: boolean;
 }) {
   const [kind, setKind] = useState<Kind>("post");
-  const [submitting, setSubmitting] = useState(false);
   const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
   const [visibility, setVisibility] = useState<Visibility>("public");
   // Bump this key to force-remount the ImageUploader after a submit (which
   // clears its internal state + hidden input).
   const [uploaderKey, setUploaderKey] = useState(0);
   const formRef = useRef<HTMLFormElement>(null);
+
+  const { status, invoke, submitting } = useFormSave();
 
   function resetForm() {
     formRef.current?.reset();
@@ -36,35 +38,45 @@ export default function NewPostForm({
     setUploaderKey((k) => k + 1);
   }
 
-  async function handleSubmit(formData: FormData) {
-    setSubmitting(true);
-    try {
-      // Admins can flag a post public, premium, or founder-only; non-admins never get
-      // this option in the UI, and the server action also rejects it on fan-created posts.
-      if (isAdmin && kind !== "post") {
-        formData.set("visibility", visibility);
-      }
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
 
-      if (kind === "poll") {
-        // Replace generic option[] entries with our state-tracked ones so admins
-        // can add/remove option inputs dynamically.
-        formData.delete("option");
-        for (const opt of pollOptions) {
-          const v = opt.trim();
-          if (v) formData.append("option", v);
-        }
-        await createPollAction(formData);
-      } else if (kind === "announcement") {
-        await createAnnouncementAction(formData);
-      } else if (kind === "challenge") {
-        await createChallengeAction(formData);
-      } else {
-        await createPostAction(formData);
+    // Admins can flag a post public, premium, or founder-only; non-admins never get
+    // this option in the UI, and the server action also rejects it on fan-created posts.
+    if (isAdmin && kind !== "post") {
+      formData.set("visibility", visibility);
+    }
+
+    if (kind === "poll") {
+      // Replace generic option[] entries with our state-tracked ones so admins
+      // can add/remove option inputs dynamically.
+      formData.delete("option");
+      for (const opt of pollOptions) {
+        const v = opt.trim();
+        if (v) formData.append("option", v);
       }
+    }
+
+    const action =
+      kind === "poll"
+        ? createPollAction
+        : kind === "announcement"
+          ? createAnnouncementAction
+          : kind === "challenge"
+            ? createChallengeAction
+            : createPostAction;
+
+    // useFormSave wraps the call with retry-on-503 + visible status. If all
+    // retries fail the status will be { kind: "error" } and we leave the
+    // form populated so the user can fix and resubmit.
+    const ok = await invoke(async () => {
+      await action(formData);
+      return { ok: true };
+    });
+    if (ok) {
       resetForm();
       setKind("post");
-    } finally {
-      setSubmitting(false);
     }
   }
 
@@ -80,7 +92,7 @@ export default function NewPostForm({
   return (
     <form
       ref={formRef}
-      action={handleSubmit}
+      onSubmit={handleSubmit}
       className="glass-card space-y-3 p-5"
     >
       <input type="hidden" name="artist_slug" value={artistSlug} />
@@ -98,7 +110,13 @@ export default function NewPostForm({
                   : "border-white/10 bg-black/30 text-white/70 hover:bg-black/50"
               }`}
             >
-              {k === "post" ? "Post" : k === "announcement" ? "📢 Announcement" : k === "poll" ? "📊 Poll" : "🏆 Challenge"}
+              {k === "post"
+                ? "Post"
+                : k === "announcement"
+                  ? "📢 Announcement"
+                  : k === "poll"
+                    ? "📊 Poll"
+                    : "🏆 Challenge"}
             </button>
           ))}
           {kind !== "post" && (
@@ -224,13 +242,10 @@ export default function NewPostForm({
       )}
 
       {(kind === "post" || kind === "announcement") && (
-        <VideoUploader
-          key={uploaderKey}
-          label="Attach video (optional)"
-        />
+        <VideoUploader key={uploaderKey} label="Attach video (optional)" />
       )}
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         {kind === "poll" ? (
           <span className="text-xs text-white/50">
             {pollOptions.filter((o) => o.trim()).length} of 6 options
@@ -238,17 +253,19 @@ export default function NewPostForm({
         ) : (
           <span />
         )}
-        <button
-          type="submit"
-          disabled={
-            submitting ||
-            (kind === "poll" &&
-              pollOptions.filter((o) => o.trim()).length < 2)
-          }
-          className="rounded-full bg-gradient-to-r from-aurora to-ember px-5 py-2 text-sm font-semibold text-white shadow-glass transition hover:brightness-110 disabled:opacity-50"
-        >
-          {submitting ? "Posting…" : submitLabel}
-        </button>
+        <div className="flex items-center gap-3">
+          <SaveStatusIndicator status={status} />
+          <button
+            type="submit"
+            disabled={
+              submitting ||
+              (kind === "poll" && pollOptions.filter((o) => o.trim()).length < 2)
+            }
+            className="rounded-full bg-gradient-to-r from-aurora to-ember px-5 py-2 text-sm font-semibold text-white shadow-glass transition hover:brightness-110 disabled:opacity-50"
+          >
+            {submitting ? "Posting…" : submitLabel}
+          </button>
+        </div>
       </div>
     </form>
   );
