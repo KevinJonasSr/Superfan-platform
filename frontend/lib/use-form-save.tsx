@@ -44,33 +44,29 @@ export interface UseFormSaveOptions {
  * it was 5xx, and retry with backoff. After all retries fail, the user
  * sees a real error instead of a fake success.
  *
- * `submit` returns the action's return value (typed via the generic), so
- * callers can branch on business-logic results like `{ success }` /
- * `{ error }` without needing extra plumbing. Returns `undefined` if all
- * retries failed (status will be "error" in that case).
+ * Two ways to call:
+ *
+ * 1. **`submit(action, formData)`** — for forms whose server action takes a
+ *    single `FormData` parameter (the common case for `<form onSubmit>`).
+ *
+ * 2. **`invoke(thunk)`** — for actions with typed arguments. Pass a closure
+ *    that calls your action however you like. Use this for click-button
+ *    actions like fulfill/refund/toggle.
+ *
+ * Both return the action's value (or `undefined` if all retries failed).
  *
  * Usage:
  *
  * ```tsx
- * const { status, submit, submitting } = useFormSave({
+ * const { status, submit, invoke, submitting } = useFormSave({
  *   onSuccess: () => router.refresh(),
  * });
  *
- * async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
- *   e.preventDefault();
- *   const fd = new FormData(e.currentTarget);
- *   fd.set("custom_field", customState);
- *   const result = await submit(myServerAction, fd);
- *   if (result?.success) router.push("/somewhere");
- * }
+ * // Form submit:
+ * await submit(myServerAction, formData);
  *
- * return (
- *   <form onSubmit={handleSubmit}>
- *     ...
- *     <SaveStatusIndicator status={status} />
- *     <button disabled={submitting}>{submitting ? "Saving…" : "Save"}</button>
- *   </form>
- * );
+ * // Click handler:
+ * await invoke(() => markFulfilledAction(redemptionId, note));
  * ```
  */
 export function useFormSave(options: UseFormSaveOptions = {}) {
@@ -83,10 +79,13 @@ export function useFormSave(options: UseFormSaveOptions = {}) {
   } = options;
   const [status, setStatus] = useState<SaveStatus>({ kind: "idle" });
 
-  const submit = useCallback(
-    async function submitAction<T>(
-      action: (formData: FormData) => Promise<T> | T,
-      formData: FormData,
+  /**
+   * Core retry+probe loop. Takes a thunk that performs the action however
+   * the caller likes. Both `submit` and `invoke` delegate to this.
+   */
+  const invoke = useCallback(
+    async function invokeAction<T>(
+      thunk: () => Promise<T> | T,
     ): Promise<T | undefined> {
       const probePath =
         path ??
@@ -96,11 +95,7 @@ export function useFormSave(options: UseFormSaveOptions = {}) {
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         setStatus({ kind: "saving", attempt });
         try {
-          const result = await callWithFetchProbe<T>(
-            action,
-            formData,
-            probePath,
-          );
+          const result = await callWithFetchProbe<T>(thunk, probePath);
           setStatus({ kind: "saved" });
           if (onSuccess) {
             try {
@@ -135,21 +130,35 @@ export function useFormSave(options: UseFormSaveOptions = {}) {
     [path, maxAttempts, successTimeoutMs, backoffMs, onSuccess],
   );
 
+  /**
+   * Backward-compatible form-submit path. Equivalent to
+   * `invoke(() => action(formData))`.
+   */
+  const submit = useCallback(
+    function submitAction<T>(
+      action: (formData: FormData) => Promise<T> | T,
+      formData: FormData,
+    ): Promise<T | undefined> {
+      return invoke(() => action(formData));
+    },
+    [invoke],
+  );
+
   return {
     status,
     submit,
+    invoke,
     submitting: status.kind === "saving",
   };
 }
 
 /**
- * Call the action while monkey-patching window.fetch to spy on the actual
+ * Run the thunk while monkey-patching window.fetch to spy on the actual
  * Server Action response status. If the POST returned ≥ 500, throw so the
- * retry loop picks it up. Returns whatever the action returned on success.
+ * retry loop picks it up. Returns whatever the thunk returned on success.
  */
 async function callWithFetchProbe<T>(
-  action: (formData: FormData) => Promise<T> | T,
-  formData: FormData,
+  thunk: () => Promise<T> | T,
   pathHint: string,
 ): Promise<T> {
   let lastStatus: number | null = null;
@@ -169,7 +178,7 @@ async function callWithFetchProbe<T>(
     return res;
   };
   try {
-    const result = await action(formData);
+    const result = await thunk();
     if (lastStatus !== null && lastStatus >= 500) {
       throw new Error(`Server returned ${lastStatus}`);
     }
