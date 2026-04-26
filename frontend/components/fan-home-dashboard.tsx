@@ -115,7 +115,9 @@ function FollowedArtistsStrip({
                   <img
                     src={a.hero_image}
                     alt=""
-                    className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-[1.04]"
+                    // object-top keeps the subject's head visible — default
+                    // object-cover crops top + bottom equally, slicing heads.
+                    className="absolute inset-0 h-full w-full object-cover object-top transition duration-300 group-hover:scale-[1.04]"
                     aria-hidden
                   />
                 </>
