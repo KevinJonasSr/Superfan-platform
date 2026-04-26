@@ -51,6 +51,7 @@ export default function FanHomeDashboard({ data }: { data: FanHomeData }) {
         {/* Recent activity */}
         <RecentActivityFeed
           posts={recentActivity}
+          hasFollows={followedArtists.length > 0}
           premiumCommunities={premiumCommunities}
           founderCommunities={founderCommunities}
         />
@@ -256,25 +257,146 @@ function ActiveCtasBlock({ ctas }: { ctas: FanHomeData["ctas"] }) {
   );
 }
 
+/**
+ * Renders up to 3 of the most recent community posts from the fan's
+ * followed artists' communities. Each row falls back to a body excerpt
+ * when `title` is null (regular `post`-kind entries don't carry a title),
+ * tags the kind, and links through to the artist's community feed.
+ *
+ * Premium-tier post bodies are gated unless the viewer has premium membership
+ * in that community; founder-only post bodies are gated unless the viewer
+ * is a founder. Titles + kind chips render either way so the feed still
+ * communicates "something happened" even when the body is hidden.
+ */
 function RecentActivityFeed({
   posts,
+  hasFollows,
+  premiumCommunities,
+  founderCommunities,
 }: {
   posts: FanHomeData["recentActivity"];
+  hasFollows: boolean;
   premiumCommunities: string[];
   founderCommunities: string[];
 }) {
+  if (posts.length === 0) {
+    return (
+      <div className="glass-card rounded-2xl p-5">
+        <p className="text-xs uppercase tracking-wide text-white/60">Recent activity</p>
+        <p className="mt-3 text-sm text-white/70">
+          {hasFollows
+            ? "Nothing new from your artists yet."
+            : "Follow an artist to see their community posts here."}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="glass-card rounded-2xl p-5">
       <p className="text-xs uppercase tracking-wide text-white/60">Recent activity</p>
-      <div className="mt-4 space-y-3">
-        {posts.length > 0 ? posts.slice(0, 3).map((post) => (
-          <div key={post.id} className="border-b border-white/5 pb-3 last:border-0">
-            <p className="text-xs font-semibold line-clamp-2">{post.title}</p>
-          </div>
-        )) : null}
-      </div>
+      <ul className="mt-4 space-y-3">
+        {posts.slice(0, 3).map((post) => {
+          const badge = postKindBadge(post.kind);
+          // Gate body for premium / founder-only posts unless the viewer has
+          // the right membership. Title + kind chip still surface either way.
+          const bodyAccessible =
+            post.visibility === "public" ||
+            (post.visibility === "premium" &&
+              premiumCommunities.includes(post.artist_slug)) ||
+            (post.visibility === "founder-only" &&
+              founderCommunities.includes(post.artist_slug));
+          // Pick the most useful display string:
+          //   1. Title if present (announcements, polls with a title, challenges)
+          //   2. Body excerpt if accessible (regular posts, body-bearing types)
+          //   3. Generic fallback ("New premium post" / "Founders-only post")
+          const title = post.title?.trim();
+          const display = title
+            ? title
+            : bodyAccessible
+              ? truncate(post.body, 80)
+              : post.visibility === "founder-only"
+                ? "Founders-only post"
+                : "New premium post";
+          return (
+            <li key={post.id} className="border-b border-white/5 pb-3 last:border-0">
+              <Link
+                href={`/artists/${post.artist_slug}/community`}
+                className="group block"
+              >
+                <p className="text-[10px] uppercase tracking-wide text-white/50">
+                  {badge.icon} {badge.label}
+                  {post.pinned && (
+                    <span className="ml-2 rounded-full bg-white/10 px-1.5 py-0.5 text-[9px] text-white/60">
+                      📌 Pinned
+                    </span>
+                  )}
+                </p>
+                <p className="mt-1 line-clamp-2 text-xs font-semibold text-white group-hover:text-white">
+                  {display}
+                </p>
+                <p className="mt-1 text-[10px] text-white/40">
+                  {post.artist_name ?? post.artist_slug}
+                  {post.author_first_name ? ` · ${post.author_first_name}` : ""}
+                  {" · "}
+                  {timeAgo(post.created_at)}
+                </p>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
+}
+
+/** Map community_post_kind → emoji + human label for the chip on each row. */
+function postKindBadge(kind: string): { icon: string; label: string } {
+  switch (kind) {
+    case "announcement":
+      return { icon: "📢", label: "Announcement" };
+    case "poll":
+      return { icon: "📊", label: "Poll" };
+    case "challenge":
+      return { icon: "🏆", label: "Challenge" };
+    default:
+      return { icon: "📝", label: "Post" };
+  }
+}
+
+/** Trim a body string to ≤ N chars on a word boundary, with an ellipsis. */
+function truncate(s: string, n: number): string {
+  const t = s.trim();
+  if (t.length <= n) return t;
+  // Cut at the last whitespace before n so we don't slice mid-word.
+  const head = t.slice(0, n);
+  const lastSpace = head.lastIndexOf(" ");
+  return (lastSpace > n * 0.5 ? head.slice(0, lastSpace) : head).trimEnd() + "…";
+}
+
+/**
+ * Render an ISO timestamp as a coarse relative string ("2h ago", "4d ago").
+ * Server-only — Fan Home is force-dynamic so this re-renders on each load
+ * and there's no client hydration mismatch to worry about.
+ */
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "";
+  const ms = Math.max(0, Date.now() - then);
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  const wk = Math.round(day / 7);
+  if (wk < 4) return `${wk}w ago`;
+  const mo = Math.round(day / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  const yr = Math.round(day / 365);
+  return `${yr}y ago`;
 }
 
 function BadgesInProgressPanel({ items }: { items: FanHomeData["badgesInProgress"] }) {
