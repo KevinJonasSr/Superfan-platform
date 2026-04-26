@@ -115,10 +115,16 @@ export default async function ArtistPage({
             <img
               src={artist.heroImage}
               alt=""
-              // object-top keeps the subject's head visible — default object-cover
-              // centers the image and crops top + bottom equally, which slices off
-              // heads on portrait artist photos.
-              className="absolute inset-0 h-full w-full object-cover object-top"
+              // Bias the focal point to ~30% from the top so portrait artist
+              // photos keep the face visible in this wide hero. The default
+              // `object-position: center` (50%) crops too low (slices heads
+              // off the top); `object-top` (0%) crops too high (shows only
+              // sky/background above the subject). 30% lands around the
+              // upper-mid of most portrait photos where faces sit. If a
+              // specific artist's photo needs different framing, consider
+              // adding a per-artist `hero_focal_y` column.
+              style={{ objectPosition: "center 30%" }}
+              className="absolute inset-0 h-full w-full object-cover"
               aria-hidden
             />
             {/* Dark gradient overlay so the title/CTAs stay legible regardless of the photo */}
