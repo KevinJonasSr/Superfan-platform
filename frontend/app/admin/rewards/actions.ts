@@ -2,7 +2,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAdminContext } from "@/lib/admin";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 
 export async function createRewardAction(formData: FormData) {
   const ctx = await getAdminContext();
@@ -72,9 +72,13 @@ export async function updateRewardAction(formData: FormData) {
     .eq("id", rewardId);
 
   if (error) {
-    throw new Error(`updateRewardAction failed: ${error.message}`);
+    return { error: error.message };
   }
-  redirect("/admin/rewards");
+  // Return success instead of server-side redirect so the client form can
+  // navigate via router.push() *after* the useFormSave retry succeeds.
+  // Server-side redirect throws NEXT_REDIRECT which our retry wrapper would
+  // misinterpret as a failure.
+  return { success: true };
 }
 
 export async function toggleRewardActiveAction(rewardId: string, active: boolean) {
