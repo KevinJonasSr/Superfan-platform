@@ -18,6 +18,12 @@ type InitialValues = {
   sortOrder: number;
 };
 
+type SaveStatus =
+  | { kind: "idle" }
+  | { kind: "saving"; attempt: number }
+  | { kind: "saved" }
+  | { kind: "error"; message: string };
+
 export default function ArtistEditForm({
   slug,
   initial,
@@ -29,25 +35,85 @@ export default function ArtistEditForm({
   const [heroImage, setHeroImage] = useState<string | null>(initial.heroImage);
   const [accentFrom, setAccentFrom] = useState(initial.accentFrom);
   const [accentTo, setAccentTo] = useState(initial.accentTo);
-  const [submitting, setSubmitting] = useState(false);
+  const [status, setStatus] = useState<SaveStatus>({ kind: "idle" });
+
+  const submitting = status.kind === "saving";
 
   // Use a plain onSubmit handler (instead of <form action={fn}>) so the submit
-  // event is reliably intercepted by React. Next.js 16's client-action form
-  // pattern is currently flaky for us — clicks were silently no-op'ing because
-  // React wasn't preventing native submission to the `javascript:throw…`
-  // sentinel. Plain onSubmit + manual FormData(e.currentTarget) sidesteps it.
+  // event is reliably intercepted by React. Wrap the action call in retry +
+  // explicit error feedback because Vercel Server Actions silently swallow
+  // 503 cold-start failures otherwise — the form would appear to "save" but
+  // the data wouldn't persist.
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setSubmitting(true);
+    setStatus({ kind: "saving", attempt: 1 });
+
+    const formData = new FormData(e.currentTarget);
+    formData.set("hero_image", heroImage ?? "");
+    formData.set("accent_from", accentFrom);
+    formData.set("accent_to", accentTo);
+
+    const maxAttempts = 3;
+    let lastError: unknown = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      setStatus({ kind: "saving", attempt });
+      try {
+        await callActionWithFetchProbe(formData);
+        // Success — refresh and show toast.
+        setStatus({ kind: "saved" });
+        router.refresh();
+        // Auto-clear the success toast after 3s
+        setTimeout(() => {
+          setStatus((s) => (s.kind === "saved" ? { kind: "idle" } : s));
+        }, 3000);
+        return;
+      } catch (err) {
+        lastError = err;
+        // Backoff: 600ms, 1500ms before next try.
+        if (attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, attempt === 1 ? 600 : 1500));
+        }
+      }
+    }
+
+    setStatus({
+      kind: "error",
+      message:
+        lastError instanceof Error
+          ? lastError.message
+          : "Save failed after 3 attempts. Try again in a moment.",
+    });
+  }
+
+  /**
+   * Call updateArtistAction, but probe the underlying Server Action POST
+   * via a fetch interceptor so we can detect 503s that React would otherwise
+   * swallow silently. If the POST returned non-2xx, throw so the retry loop
+   * picks it up.
+   */
+  async function callActionWithFetchProbe(formData: FormData) {
+    let lastStatus: number | null = null;
+    const origFetch = window.fetch;
+    window.fetch = async function (...args) {
+      const res = await origFetch.apply(this, args as Parameters<typeof fetch>);
+      // Only inspect requests to this page (where the Server Action POSTs).
+      const url = String(args[0] || "");
+      if (
+        url.includes("/admin/artists/") &&
+        !url.includes("?_rsc")
+      ) {
+        lastStatus = res.status;
+      }
+      return res;
+    };
     try {
-      const formData = new FormData(e.currentTarget);
-      formData.set("hero_image", heroImage ?? "");
-      formData.set("accent_from", accentFrom);
-      formData.set("accent_to", accentTo);
       await updateArtistAction(formData);
-      router.refresh();
+      if (lastStatus !== null && lastStatus >= 500) {
+        throw new Error(`Server returned ${lastStatus}`);
+      }
     } finally {
-      setSubmitting(false);
+      window.fetch = origFetch;
     }
   }
 
@@ -155,7 +221,7 @@ export default function ArtistEditForm({
           className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
         />
       </Field>
-      <div className="flex items-center justify-between pt-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
         <label className="flex items-center gap-2 text-xs text-white/70">
           <input
             type="checkbox"
@@ -166,13 +232,32 @@ export default function ArtistEditForm({
           />
           Active (visible to fans)
         </label>
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-full bg-gradient-to-r from-aurora to-ember px-6 py-2 text-sm font-semibold text-white disabled:opacity-50"
-        >
-          {submitting ? "Saving…" : "Save changes"}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Status indicator */}
+          {status.kind === "saving" && (
+            <span className="text-xs text-white/60">
+              Saving{status.attempt > 1 ? ` — retrying (${status.attempt}/3)` : "…"}
+            </span>
+          )}
+          {status.kind === "saved" && (
+            <span className="text-xs text-emerald-300">✓ Saved</span>
+          )}
+          {status.kind === "error" && (
+            <span
+              className="text-xs text-rose-300"
+              title={status.message}
+            >
+              ✗ {status.message}
+            </span>
+          )}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="rounded-full bg-gradient-to-r from-aurora to-ember px-6 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {submitting ? "Saving…" : "Save changes"}
+          </button>
+        </div>
       </div>
     </form>
   );
