@@ -42,17 +42,15 @@ async function getFounderCount(communitySlug: string): Promise<{ count: number; 
       .select("founder_cap")
       .eq("slug", communitySlug)
       .maybeSingle();
-    
     if (communityError || !community) return null;
-    
+
     const { count, error: countError } = await admin
       .from("fan_community_memberships")
       .select("*", { count: "exact", head: true })
       .eq("community_id", communitySlug)
       .eq("is_founder", true);
-    
     if (countError || count === null) return null;
-    
+
     return {
       count,
       cap: (community.founder_cap as number) ?? 100,
@@ -108,48 +106,74 @@ export default async function ArtistPage({
     <main className="mx-auto max-w-6xl space-y-10 px-6 py-12">
       {/* Hero */}
       <section
-        className="relative overflow-hidden rounded-3xl border border-white/10 p-10"
-        style={{ backgroundImage: heroGradient }}
+        className="relative overflow-hidden rounded-3xl border border-white/10 p-10 min-h-[420px] md:min-h-[520px]"
+        style={!artist.heroImage ? { backgroundImage: heroGradient } : undefined}
       >
-        <p className="text-xs uppercase tracking-[0.3em] text-white/60">
-          {artist.genres.join(" · ")}
-        </p>
-        <h1
-          className="mt-3 text-5xl font-semibold leading-tight"
-          style={{ fontFamily: "var(--font-display)" }}
-        >
-          {artist.name}
-        </h1>
-        <p className="mt-3 max-w-xl text-lg text-white/80">{artist.tagline}</p>
-        <div className="mt-8 flex flex-wrap gap-3">
-          <Link
-            href={primaryCta.href}
-            className="rounded-full px-6 py-3 text-sm font-semibold text-white transition hover:brightness-110"
-            style={{ backgroundImage: ctaGradient }}
-          >
-            {primaryCta.label}
-          </Link>
-          {isSignedIn && (
-            <FollowButton artistSlug={artist.slug} initialFollowing={isFollowing} />
-          )}
-          <Link
-            href={`/artists/${slug}/community`}
-            className="rounded-full border border-white/30 px-6 py-3 text-sm font-medium text-white/80 hover:bg-white/10"
-          >
-            Community →
-          </Link>
-          <Link
-            href={secondaryCta.href}
-            className="rounded-full border border-white/30 px-6 py-3 text-sm font-medium text-white/80 hover:bg-white/10"
-          >
-            {secondaryCta.label}
-          </Link>
-        </div>
-        {!artist.heroImage && (
-          <p className="mt-6 text-xs text-white/40">
-            Hero imagery pending Box asset drop.
-          </p>
+        {artist.heroImage && (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={artist.heroImage}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+              aria-hidden
+            />
+            {/* Dark gradient overlay so the title/CTAs stay legible regardless of the photo */}
+            <div
+              className="absolute inset-0"
+              style={{
+                backgroundImage:
+                  "linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.55) 45%, rgba(0,0,0,0.15) 100%)",
+              }}
+              aria-hidden
+            />
+          </>
         )}
+
+        {/* Content layer — sits above image + overlay */}
+        <div className="relative">
+          <p className="text-xs uppercase tracking-[0.3em] text-white/70">
+            {artist.genres.join(" · ")}
+          </p>
+          <h1
+            className="mt-3 text-5xl font-semibold leading-tight drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)]"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            {artist.name}
+          </h1>
+          <p className="mt-3 max-w-xl text-lg text-white/85 drop-shadow-[0_1px_8px_rgba(0,0,0,0.5)]">
+            {artist.tagline}
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              href={primaryCta.href}
+              className="rounded-full px-6 py-3 text-sm font-semibold text-white transition hover:brightness-110"
+              style={{ backgroundImage: ctaGradient }}
+            >
+              {primaryCta.label}
+            </Link>
+            {isSignedIn && (
+              <FollowButton artistSlug={artist.slug} initialFollowing={isFollowing} />
+            )}
+            <Link
+              href={`/artists/${slug}/community`}
+              className="rounded-full border border-white/30 bg-black/30 px-6 py-3 text-sm font-medium text-white/90 backdrop-blur hover:bg-white/10"
+            >
+              Community →
+            </Link>
+            <Link
+              href={secondaryCta.href}
+              className="rounded-full border border-white/30 bg-black/30 px-6 py-3 text-sm font-medium text-white/90 backdrop-blur hover:bg-white/10"
+            >
+              {secondaryCta.label}
+            </Link>
+          </div>
+          {!artist.heroImage && (
+            <p className="mt-6 text-xs text-white/40">
+              Hero imagery pending Box asset drop.
+            </p>
+          )}
+        </div>
       </section>
 
       {/* Founder wall link */}
@@ -168,7 +192,7 @@ export default async function ArtistPage({
       <section className="grid gap-6 lg:grid-cols-[2fr_1fr]">
         <div className="glass-card p-8">
           <p className="text-sm uppercase tracking-wide text-white/60">About</p>
-          <p className="mt-4 text-base leading-relaxed text-white/80">{artist.bio}</p>
+          <p className="mt-4 text-base leading-relaxed text-white/80 whitespace-pre-line">{artist.bio}</p>
         </div>
         <div className="glass-card p-8">
           <p className="text-sm uppercase tracking-wide text-white/60">Follow</p>
