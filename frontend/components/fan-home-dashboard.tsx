@@ -60,7 +60,10 @@ export default function FanHomeDashboard({ data }: { data: FanHomeData }) {
       </div>
 
       {/* Spend your points card */}
-      <SpendPointsCard primaryCommunity={primaryCommunity} points={fan.total_points} />
+      <SpendPointsCard
+        primaryCommunity={primaryCommunity}
+        points={fan.total_points}
+      />
     </section>
   );
 }
@@ -87,7 +90,6 @@ function FollowedArtistsStrip({
       </div>
     );
   }
-
   return (
     <div className="glass-card p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -103,10 +105,53 @@ function FollowedArtistsStrip({
           <Link
             key={a.slug}
             href={`/artists/${a.slug}`}
-            className="group flex w-36 shrink-0 flex-col items-center gap-2 rounded-2xl border border-white/10 p-3 transition hover:border-white/30"
+            className="group relative flex w-44 shrink-0 flex-col overflow-hidden rounded-2xl border border-white/10 transition hover:border-white/30 hover:-translate-y-0.5"
           >
-            {/* Artist card — simplified for brevity */}
-            <p className="text-xs font-semibold text-center">{a.name}</p>
+            {/* Photo area: 3:4 portrait so the artist reads cleanly at this width. */}
+            <div className="relative aspect-[3/4] w-full overflow-hidden bg-black/40">
+              {a.hero_image ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={a.hero_image}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-[1.04]"
+                    aria-hidden
+                  />
+                </>
+              ) : (
+                // Fallback when no hero is uploaded yet — accent gradient stand-in.
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    backgroundImage: `linear-gradient(to bottom right, ${a.accent_from}, ${a.accent_to})`,
+                  }}
+                  aria-hidden
+                />
+              )}
+
+              {/* Bottom-up dark gradient so the name + tagline stay readable on any photo. */}
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.35) 55%, rgba(0,0,0,0) 100%)",
+                }}
+                aria-hidden
+              />
+
+              {/* Name + tagline overlay */}
+              <div className="absolute inset-x-0 bottom-0 p-3">
+                <p className="text-sm font-semibold text-white drop-shadow-[0_1px_8px_rgba(0,0,0,0.7)]">
+                  {a.name}
+                </p>
+                {a.tagline && (
+                  <p className="mt-0.5 line-clamp-1 text-[10px] text-white/80 drop-shadow-[0_1px_6px_rgba(0,0,0,0.6)]">
+                    {a.tagline}
+                  </p>
+                )}
+              </div>
+            </div>
           </Link>
         ))}
       </div>
@@ -131,7 +176,6 @@ function NextEventCard({ event }: { event: any }) {
 
 function ActiveCtasBlock({ ctas }: { ctas: any[] }) {
   if (ctas.length === 0) return null;
-
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {ctas.map((cta) => (
@@ -164,13 +208,11 @@ function RecentActivityFeed({
     <div className="glass-card rounded-2xl p-5">
       <p className="text-xs uppercase tracking-wide text-white/60">Recent activity</p>
       <div className="mt-4 space-y-3">
-        {posts.length > 0
-          ? posts.slice(0, 3).map((post) => (
-              <div key={post.id} className="border-b border-white/5 pb-3 last:border-0">
-                <p className="text-xs font-semibold line-clamp-2">{post.title}</p>
-              </div>
-            ))
-          : null}
+        {posts.length > 0 ? posts.slice(0, 3).map((post) => (
+          <div key={post.id} className="border-b border-white/5 pb-3 last:border-0">
+            <p className="text-xs font-semibold line-clamp-2">{post.title}</p>
+          </div>
+        )) : null}
       </div>
     </div>
   );
@@ -181,16 +223,14 @@ function BadgesInProgressPanel({ items }: { items: any[] }) {
     <div className="glass-card rounded-2xl p-5">
       <p className="text-xs uppercase tracking-wide text-white/60">Badges in progress</p>
       <div className="mt-4 flex flex-wrap gap-2">
-        {items.length > 0
-          ? items.slice(0, 4).map((badge) => (
-              <div
-                key={badge.slug}
-                className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-[10px]"
-              >
-                {badge.icon} {badge.name}
-              </div>
-            ))
-          : null}
+        {items.length > 0 ? items.slice(0, 4).map((badge) => (
+          <div
+            key={badge.slug}
+            className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-[10px]"
+          >
+            {badge.icon} {badge.name}
+          </div>
+        )) : null}
       </div>
     </div>
   );
