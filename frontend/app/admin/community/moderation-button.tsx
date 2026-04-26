@@ -10,20 +10,26 @@ import { useFormSave, SaveStatusIndicator } from "@/lib/use-form-save";
  * status, instead of silently failing (which is what happened with the
  * original `<form action={fn}>` pattern when Vercel cold-started).
  *
- * Passes server actions as props from server components to client components
- * via the standard Next.js "client function ref" mechanism.
+ * Server actions are passed as props from server components to client
+ * components via the standard Next.js "client function ref" mechanism.
+ *
+ * Variants give you the common pin/delete styling. For anything bespoke
+ * (suspend/unsuspend toggles, etc.), pass `className` to override.
  */
 export default function ModerationButton({
   action,
   fields,
   label,
   variant = "default",
+  className,
   confirmMessage,
 }: {
   action: (formData: FormData) => Promise<unknown> | unknown;
   fields: Record<string, string>;
   label: string;
   variant?: "default" | "delete";
+  /** Override the default styling. Wins over `variant`. */
+  className?: string;
   confirmMessage?: string;
 }) {
   const router = useRouter();
@@ -40,8 +46,6 @@ export default function ModerationButton({
       fd.set(k, v);
     }
     const result = await invoke<unknown>(() => action(fd));
-    // If the action returned an object with `error`, surface it. Most
-    // moderation actions return void today, so this is a no-op for them.
     if (
       result &&
       typeof result === "object" &&
@@ -52,10 +56,11 @@ export default function ModerationButton({
     }
   }
 
-  const className =
-    variant === "delete"
+  const baseClassName =
+    className ??
+    (variant === "delete"
       ? "text-[11px] text-rose-300/80 hover:text-rose-300 disabled:opacity-50"
-      : "text-[11px] text-white/60 hover:text-white disabled:opacity-50";
+      : "text-[11px] text-white/60 hover:text-white disabled:opacity-50");
 
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -63,7 +68,7 @@ export default function ModerationButton({
         type="button"
         onClick={handleClick}
         disabled={submitting}
-        className={className}
+        className={baseClassName}
       >
         {submitting ? "…" : label}
       </button>
