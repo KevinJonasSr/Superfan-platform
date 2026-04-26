@@ -2,48 +2,48 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { adminSuspendFanAction } from "@/app/admin/community/actions";
+import ModerationButton from "@/app/admin/community/moderation-button";
 
 export const dynamic = "force-dynamic";
 
 async function loadFan(id: string) {
   const admin = createAdminClient();
-  const [fanRes, ledgerRes, badgesRes, postsRes, commentsRes, entriesRes, referralsRes] =
-    await Promise.all([
-      admin.from("fans").select("*").eq("id", id).maybeSingle(),
-      admin
-        .from("points_ledger")
-        .select("delta,source,source_ref,note,created_at")
-        .eq("fan_id", id)
-        .order("created_at", { ascending: false })
-        .limit(50),
-      admin
-        .from("fan_badges")
-        .select("badge_slug,earned_at,badges(slug,name,icon,category)")
-        .eq("fan_id", id),
-      admin
-        .from("community_posts")
-        .select("id,artist_slug,kind,body,created_at")
-        .eq("author_id", id)
-        .order("created_at", { ascending: false })
-        .limit(20),
-      admin
-        .from("community_comments")
-        .select("id,post_id,body,created_at")
-        .eq("author_id", id)
-        .order("created_at", { ascending: false })
-        .limit(20),
-      admin
-        .from("community_challenge_entries")
-        .select("id,post_id,body,created_at")
-        .eq("fan_id", id)
-        .order("created_at", { ascending: false })
-        .limit(20),
-      admin
-        .from("referrals")
-        .select("id,referred_email,status,points_awarded,created_at,verified_at")
-        .eq("referrer_id", id)
-        .order("created_at", { ascending: false }),
-    ]);
+  const [fanRes, ledgerRes, badgesRes, postsRes, commentsRes, entriesRes, referralsRes] = await Promise.all([
+    admin.from("fans").select("*").eq("id", id).maybeSingle(),
+    admin
+      .from("points_ledger")
+      .select("delta,source,source_ref,note,created_at")
+      .eq("fan_id", id)
+      .order("created_at", { ascending: false })
+      .limit(50),
+    admin
+      .from("fan_badges")
+      .select("badge_slug,earned_at,badges(slug,name,icon,category)")
+      .eq("fan_id", id),
+    admin
+      .from("community_posts")
+      .select("id,artist_slug,kind,body,created_at")
+      .eq("author_id", id)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    admin
+      .from("community_comments")
+      .select("id,post_id,body,created_at")
+      .eq("author_id", id)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    admin
+      .from("community_challenge_entries")
+      .select("id,post_id,body,created_at")
+      .eq("fan_id", id)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    admin
+      .from("referrals")
+      .select("id,referred_email,status,points_awarded,created_at,verified_at")
+      .eq("referrer_id", id)
+      .order("created_at", { ascending: false }),
+  ]);
 
   if (!fanRes.data) return null;
   return {
@@ -72,6 +72,7 @@ export default async function AdminFanDetailPage({
       <Link href="/admin/fans" className="text-xs text-white/60 hover:text-white">
         ← Back to fans
       </Link>
+
       {/* Header */}
       <section className="glass-card flex flex-wrap items-start gap-4 p-6">
         {fan.avatar_url ? (
@@ -111,19 +112,24 @@ export default async function AdminFanDetailPage({
             )}
           </div>
         </div>
-        <form action={adminSuspendFanAction}>
-          <input type="hidden" name="fan_id" value={fan.id as string} />
-          <input type="hidden" name="suspend" value={fan.suspended ? "false" : "true"} />
-          <button
-            className={`rounded-full px-4 py-2 text-xs font-semibold ${
-              fan.suspended
-                ? "bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30"
-                : "bg-rose-500/20 text-rose-200 hover:bg-rose-500/30"
-            }`}
-          >
-            {fan.suspended ? "Unsuspend" : "Suspend"}
-          </button>
-        </form>
+        <ModerationButton
+          action={adminSuspendFanAction}
+          fields={{
+            fan_id: fan.id as string,
+            suspend: fan.suspended ? "false" : "true",
+          }}
+          label={fan.suspended ? "Unsuspend" : "Suspend"}
+          confirmMessage={
+            fan.suspended
+              ? "Lift the suspension on this fan?"
+              : "Suspend this fan? They won't be able to post or comment until unsuspended."
+          }
+          className={`rounded-full px-4 py-2 text-xs font-semibold disabled:opacity-50 ${
+            fan.suspended
+              ? "bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30"
+              : "bg-rose-500/20 text-rose-200 hover:bg-rose-500/30"
+          }`}
+        />
       </section>
 
       {/* KPIs */}
