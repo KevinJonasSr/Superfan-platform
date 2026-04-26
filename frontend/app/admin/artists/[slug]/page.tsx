@@ -5,6 +5,7 @@ import { listEventsForAdmin } from "@/lib/data/artists";
 import { listRsvpsForEvent } from "@/lib/data/events";
 import ArtistEditForm from "./edit-form";
 import CreateEventForm from "./create-event-form";
+import EditableEventRow from "./editable-event-row";
 import {
   deleteEventAction,
   sendReminderNowAction,
@@ -33,9 +34,11 @@ export default async function AdminArtistEditPage({
     .select("slug, name, tagline, bio, hero_image, accent_from, accent_to, genres, social, active, sort_order")
     .eq("slug", slug)
     .maybeSingle();
+
   if (!artist) notFound();
 
   const events = await listEventsForAdmin(slug);
+
   const rsvpListsByEvent = await Promise.all(
     events.map((e) => listRsvpsForEvent(e.id)),
   );
@@ -102,9 +105,9 @@ export default async function AdminArtistEditPage({
       <section className="glass-card p-5">
         <p className="text-sm font-semibold">Upcoming events</p>
         <p className="mt-1 text-xs text-white/60">
-          Shown on the artist page. Set <span className="text-white/80">active = false</span> to hide without deleting.
+          Shown on the artist page. Set <span className="text-white/80">active = false</span> to hide without deleting,
+          or click ✏️ Edit on a row to change date, location, capacity, etc.
         </p>
-
         <div className="mt-3 space-y-3">
           {events.length === 0 && <p className="text-xs text-white/50">No events yet.</p>}
           {events.map((e, i) => {
@@ -116,7 +119,22 @@ export default async function AdminArtistEditPage({
             const remindersScheduled =
               e.starts_at !== null && e.active && new Date(e.starts_at) > new Date();
             return (
-              <div key={e.id} className="rounded-2xl bg-black/40 p-3">
+              <EditableEventRow
+                key={e.id}
+                artistSlug={slug}
+                event={{
+                  id: e.id,
+                  title: e.title,
+                  detail: e.detail ?? null,
+                  event_date: e.event_date ?? null,
+                  starts_at: e.starts_at ?? null,
+                  location: e.location ?? null,
+                  url: e.url ?? null,
+                  capacity: e.capacity ?? null,
+                  sort_order: e.sort_order ?? 0,
+                  active: e.active ?? true,
+                }}
+              >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold">
@@ -180,7 +198,11 @@ export default async function AdminArtistEditPage({
                         >
                           {r.fan?.avatar_url ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={r.fan.avatar_url as string} alt="" className="h-4 w-4 rounded-full object-cover" />
+                            <img
+                              src={r.fan.avatar_url as string}
+                              alt=""
+                              className="h-4 w-4 rounded-full object-cover"
+                            />
                           ) : (
                             <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-br from-aurora to-ember text-[8px] font-bold">
                               {(r.fan?.first_name?.[0] ?? "F").toUpperCase()}
@@ -192,7 +214,7 @@ export default async function AdminArtistEditPage({
                     </div>
                   </details>
                 )}
-              </div>
+              </EditableEventRow>
             );
           })}
         </div>
