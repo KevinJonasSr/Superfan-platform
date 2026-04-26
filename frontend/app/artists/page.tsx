@@ -37,7 +37,9 @@ export default async function ArtistsIndexPage() {
                   <img
                     src={a.heroImage}
                     alt=""
-                    className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]"
+                    // object-top keeps the subject's head visible — default
+                    // object-cover crops top + bottom equally, slicing heads.
+                    className="absolute inset-0 h-full w-full object-cover object-top transition duration-500 group-hover:scale-[1.04]"
                     aria-hidden
                   />
                 </>
