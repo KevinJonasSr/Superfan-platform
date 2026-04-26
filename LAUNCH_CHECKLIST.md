@@ -2,7 +2,7 @@
 
 Living document. Update this whenever a launch-blocking item is resolved or a new one is discovered. Grouped by category so blockers are easy to scan.
 
-Last updated: April 26, 2026 — useFormSave hook rolled out to most write surfaces (artist edit/create, rewards CRUD, redemption fulfill/refund, event create, community composer, community moderation, fan suspend)
+Last updated: April 26, 2026 — useFormSave hook rolled out to most write surfaces (artist edit/create, rewards CRUD, redemption fulfill/refund, event create, community composer, community moderation, fan suspend) + hero image crop fixed (object-position center 30%)
 
 ---
 
@@ -166,6 +166,7 @@ import ModerationButton from "@/app/admin/community/moderation-button";
 - [x] **RaeLynn bio** — replaced placeholder with full copy + Luke Bryan select-date opener line
 - [x] **RaeLynn hero image** — leopard-coat-at-barn photo uploaded; rendered in artist page hero section
 - [x] **RaeLynn accent colors** — retuned from pink/yellow to honey gold → deep espresso brown to match leopard palette
+- [x] **Hero image crop fix** — `objectPosition: center 30%` on the wide hero so faces stay visible; `object-top` on 3:4 portrait strip + directory cards
 - [ ] **Other artist bios** — replace "Placeholder bio — awaiting final copy" in `/admin/artists/[slug]` for Danger Twins, Dan Marshall, Hunter Hawkins
 - [ ] **Other artist hero images** — Danger Twins still uses gradient fallback (Dan and Hunter already have heroes)
 - [ ] **Tour dates** — replace "TBD" / "Dates to come" events with real tour dates once announced
@@ -206,6 +207,7 @@ import ModerationButton from "@/app/admin/community/moderation-button";
 - [ ] **Leaderboards** — per-artist top fans by points / referrals
 - [ ] **Onboarding welcome email + SMS** — fire a welcome message right after signup
 - [ ] **Data export + delete-account** (CCPA/GDPR self-serve)
+- [ ] **Per-artist hero focal-point control** — currently every wide hero uses `objectPosition: center 30%` as a global default, which works for most portrait artist photos but not all (subjects framed lower than typical, group shots, landscape-oriented portraits, etc.). Add a `hero_focal_y` smallint column (0–100, default 30) to the `artists` table, surface it in the `/admin/artists/[slug]` edit form (a slider or a numeric input next to the hero uploader, ideally with a live preview rendering of the chosen crop), and read it in `frontend/app/artists/[slug]/page.tsx` as `style={{ objectPosition: \`center ${artist.heroFocalY ?? 30}%\` }}`. Optional: add `hero_focal_x` too if landscape photos ever need horizontal repositioning. Estimated work: ~1 hour (one small migration + one form field + one render-line change).
 
 ---
 
