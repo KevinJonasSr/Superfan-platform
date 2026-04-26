@@ -95,11 +95,18 @@ export async function updateArtistAction(formData: FormData) {
   revalidatePath(`/artists`);
 }
 
+/**
+ * Create a new event for an artist. Returns { success } on success or
+ * { error } on validation/DB failure. The client form (CreateEventForm)
+ * uses useFormSave for retry-on-503 + visible status feedback.
+ */
 export async function createEventAction(formData: FormData) {
   await requireAdmin();
   const artistSlug = String(formData.get("artist_slug") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
-  if (!artistSlug || !title) return;
+  if (!artistSlug || !title) {
+    return { error: "Title is required." };
+  }
   const detail = String(formData.get("detail") ?? "").trim();
   const eventDate = String(formData.get("event_date") ?? "").trim();
   const startsAt = String(formData.get("starts_at") ?? "").trim();
@@ -110,7 +117,7 @@ export async function createEventAction(formData: FormData) {
   const sortOrder = parseInt(String(formData.get("sort_order") ?? "0"), 10) || 0;
 
   const supa = createAdminClient();
-  await supa.from("artist_events").insert({
+  const { error } = await supa.from("artist_events").insert({
     artist_slug: artistSlug,
     title,
     detail: detail || null,
@@ -121,8 +128,12 @@ export async function createEventAction(formData: FormData) {
     capacity: Number.isFinite(capacity) ? capacity : null,
     sort_order: sortOrder,
   });
+  if (error) {
+    return { error: error.message };
+  }
   revalidatePath(`/admin/artists/${artistSlug}`);
   revalidatePath(`/artists/${artistSlug}`);
+  return { success: true as const };
 }
 
 export async function sendReminderNowAction(formData: FormData) {
