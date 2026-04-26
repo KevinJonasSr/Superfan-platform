@@ -12,15 +12,31 @@ async function requireAdmin() {
   return admin;
 }
 
+/**
+ * Create a new artist. Returns { success, slug } on success or { error } on
+ * validation/DB failure. The client form (CreateArtistForm) handles the
+ * post-success navigation via router.push so retry-on-503 + visible status
+ * can work without the redirect throwing NEXT_REDIRECT mid-retry.
+ */
 export async function createArtistAction(formData: FormData) {
   await requireAdmin();
-  const slug = String(formData.get("slug") ?? "").toLowerCase().trim().replace(/[^a-z0-9-]/g, "-");
+  const slug = String(formData.get("slug") ?? "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9-]/g, "-");
   const name = String(formData.get("name") ?? "").trim();
-  if (!slug || !name) return;
+  if (!slug || !name) {
+    return { error: "Slug and display name are required." };
+  }
   const supa = createAdminClient();
-  await supa.from("artists").insert({ slug, name, sort_order: 99 });
+  const { error } = await supa
+    .from("artists")
+    .insert({ slug, name, sort_order: 99 });
+  if (error) {
+    return { error: error.message };
+  }
   revalidatePath("/admin/artists");
-  redirect(`/admin/artists/${slug}`);
+  return { success: true as const, slug };
 }
 
 export async function updateArtistAction(formData: FormData) {
@@ -73,7 +89,6 @@ export async function updateArtistAction(formData: FormData) {
       sort_order: Number.isFinite(sortOrder) ? sortOrder : 99,
     })
     .eq("slug", slug);
-
   revalidatePath("/admin/artists");
   revalidatePath(`/admin/artists/${slug}`);
   revalidatePath(`/artists/${slug}`);
@@ -138,7 +153,6 @@ export async function sendReminderNowAction(formData: FormData) {
     reminder_sms_template: (event.reminder_sms_template as string | null) ?? null,
     artist_name: (artist?.name as string | null) ?? null,
   };
-
   await sendEventReminder(reminderEvent, "manual");
   revalidatePath(`/admin/artists/${artistSlug}`);
 }

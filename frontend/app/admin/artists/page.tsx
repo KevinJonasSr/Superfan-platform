@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { listArtistsForAdmin } from "@/lib/data/artists";
-import { createArtistAction } from "./actions";
+import CreateArtistForm from "./create-artist-form";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminArtistsPage() {
   const artists = await listArtistsForAdmin();
-
   return (
     <div className="space-y-6">
       <div>
@@ -32,15 +31,13 @@ export default async function AdminArtistsPage() {
                 <div className="flex items-center gap-3">
                   {a.hero_image ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={a.hero_image}
-                      alt=""
-                      className="h-12 w-12 rounded-full object-cover"
-                    />
+                    <img src={a.hero_image} alt="" className="h-12 w-12 rounded-full object-cover" />
                   ) : (
                     <span
                       className="flex h-12 w-12 items-center justify-center rounded-full text-sm font-bold text-white"
-                      style={{ backgroundImage: `linear-gradient(to bottom right, ${a.accent_from}, ${a.accent_to})` }}
+                      style={{
+                        backgroundImage: `linear-gradient(to bottom right, ${a.accent_from}, ${a.accent_to})`
+                      }}
                     >
                       {a.name.slice(0, 1)}
                     </span>
@@ -69,26 +66,7 @@ export default async function AdminArtistsPage() {
         <p className="mt-1 text-xs text-white/60">
           Slug is the URL segment (lowercase letters, digits, dashes). Can&apos;t be changed later.
         </p>
-        <form action={createArtistAction} className="mt-3 flex flex-wrap gap-2">
-          <input
-            name="slug"
-            required
-            placeholder="slug (e.g. kacey)"
-            className="flex-1 min-w-[160px] rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm"
-          />
-          <input
-            name="name"
-            required
-            placeholder="Display name"
-            className="flex-1 min-w-[160px] rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm"
-          />
-          <button
-            type="submit"
-            className="rounded-full bg-gradient-to-r from-aurora to-ember px-5 py-2 text-sm font-semibold text-white"
-          >
-            Create
-          </button>
-        </form>
+        <CreateArtistForm />
       </section>
     </div>
   );
