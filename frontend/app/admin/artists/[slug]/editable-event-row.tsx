@@ -32,13 +32,21 @@ export default function EditableEventRow({
           to the existing "View RSVPs" details summary. Hidden while the form
           is open since the form itself has its own Cancel button. */}
       {!editing && (
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          className="mt-2 inline-flex text-[11px] text-white/60 hover:text-white"
-        >
-          ✏️ Edit
-        </button>
+        <div className="mt-2 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="inline-flex text-[11px] text-white/60 hover:text-white"
+          >
+            ✏️ Edit
+          </button>
+          <a
+            href={`/admin/artists/${artistSlug}/events/${event.id}/match`}
+            className="inline-flex text-[11px] text-white/60 hover:text-white"
+          >
+            🎯 Match preview
+          </a>
+        </div>
       )}
 
       {editing && (
