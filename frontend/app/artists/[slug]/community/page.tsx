@@ -11,12 +11,14 @@ import {
   getCommentsByPost,
   getPollData,
   getPostsByArtist,
+  getTopTagsForArtist,
 } from "@/lib/data/community";
 import { canAccess, getViewerEntitlement } from "@/lib/entitlements";
 import PremiumPaywall from "@/components/premium-paywall";
 import FanCtaBlock from "./fan-cta-block";
 import NewPostForm from "./new-post-form";
 import PostCard from "./post-card";
+import TagFilterChips from "./tag-filter-chips";
 
 export async function generateStaticParams() {
   return listArtists().map((a) => ({ slug: a.slug }));
@@ -35,19 +37,25 @@ export async function generateMetadata({
 
 export default async function ArtistCommunityPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ tag?: string }>;
 }) {
   const { slug } = await params;
+  const sp = await searchParams;
+  const tagFilter = (sp.tag ?? "").trim() || null;
+
   const artist = await getArtistFromDb(slug);
   if (!artist) notFound();
 
-  const [fan, posts, adminUser, fanActions, entitlement] = await Promise.all([
+  const [fan, posts, adminUser, fanActions, entitlement, topTags] = await Promise.all([
     getCurrentFan(),
-    getPostsByArtist(slug, 30),
+    getPostsByArtist(slug, 30, { tagFilter }),
     getAdminUser(),
     getActiveFanActionsForArtist(slug),
     getViewerEntitlement(slug),
+    getTopTagsForArtist(slug, 10),
   ]);
 
   // Parallel-fetch comments + poll data + challenge entries for every visible
@@ -124,6 +132,8 @@ export default async function ArtistCommunityPage({
           </div>
         </section>
       )}
+
+      <TagFilterChips tags={topTags} activeTag={tagFilter} />
 
       {posts.length === 0 ? (
         <section className="glass-card p-8 text-center">

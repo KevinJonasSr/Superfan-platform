@@ -15,6 +15,7 @@ import type {
 export async function getPostsByArtist(
   artistSlug: string,
   limit = 30,
+  options: { tagFilter?: string | null } = {},
 ): Promise<CommunityPost[]> {
   try {
     const supabase = await createClient();
@@ -22,15 +23,23 @@ export async function getPostsByArtist(
       data: { user },
     } = await supabase.auth.getUser();
 
-    const { data: posts, error: postsErr } = await supabase
+    let postsQuery = supabase
       .from("community_posts")
       .select(
-        "id, artist_slug, author_id, kind, title, body, image_url, video_url, video_poster_url, pinned, visibility, created_at",
+        "id, artist_slug, author_id, kind, title, body, image_url, video_url, video_poster_url, pinned, visibility, created_at, tags",
       )
       .eq("artist_slug", artistSlug)
       .order("pinned", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(limit);
+
+    // Phase 5 #5: optional ?tag=foo filter from the community-feed URL.
+    // Uses pgvector-style array contains via Supabase's .contains().
+    if (options.tagFilter && options.tagFilter.length > 0) {
+      postsQuery = postsQuery.contains("tags", [options.tagFilter]);
+    }
+
+    const { data: posts, error: postsErr } = await postsQuery;
 
     if (postsErr) throw postsErr;
     if (!posts || posts.length === 0) return [];
@@ -107,6 +116,7 @@ export async function getPostsByArtist(
           reaction_counts: reactionsByPost.get(p.id as string) ?? {},
           my_reactions: myReactionsByPost.get(p.id as string) ?? [],
           comment_count: commentCountsByPost.get(p.id as string) ?? 0,
+      tags: ((p as { tags?: string[] }).tags as string[] | undefined) ?? [],
         }) as CommunityPost,
     );
   } catch {
@@ -249,6 +259,36 @@ export async function getCommentsByPost(
         }) as CommunityComment,
     );
   } catch {
+    return [];
+  }
+}
+
+
+/**
+ * Returns the top-N most-frequently-used tags in an artist's community,
+ * with post counts. Powers the filter chips on /artists/[slug]/community.
+ *
+ * Calls the list_top_tags_for_community Postgres function (defined in
+ * migration 0028) so the heavy lifting (unnest + group by + count) stays
+ * in the DB.
+ */
+export async function getTopTagsForArtist(
+  artistSlug: string,
+  limit = 12,
+): Promise<Array<{ tag: string; post_count: number }>> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("list_top_tags_for_community", {
+      p_artist_slug: artistSlug,
+      p_limit: limit,
+    });
+    if (error) throw error;
+    return ((data ?? []) as Array<{ tag: string; post_count: number | string }>).map((r) => ({
+      tag: String(r.tag),
+      post_count: Number(r.post_count),
+    }));
+  } catch (err) {
+    console.warn("getTopTagsForArtist failed:", err instanceof Error ? err.message : err);
     return [];
   }
 }
