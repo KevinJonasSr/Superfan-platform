@@ -276,3 +276,188 @@ scales with member volume and it doesn't share dependencies with #1.
 ---
 
 *Last updated: April 2026 (Phase 1 of the AI roadmap)*
+
+---
+
+# Phase 2 — Moderation Classifier (recommendation #2)
+
+The moderation classifier shipped in Phase 2 puts every new post and
+comment through Anthropic Claude Haiku 4.5 to get a structured safety
+classification (`safe` / `flag_review` / `auto_hide`) with severity,
+categories, and reason. RLS hides `auto_hide` rows from public view;
+flagged rows show up in `/admin/moderation` for human review.
+
+## What's wired up
+
+### Database
+
+`supabase/migrations/0025_moderation.sql` adds:
+
+- `moderation_status`, `moderation_severity`, `moderation_categories`,
+  `moderation_reason`, `moderation_self_harm`, `moderation_classified_at`,
+  `moderation_model`, `moderation_prompt_version` columns on both
+  `community_posts` and `community_comments`.
+- Updated RLS so `auto_hide` rows only show to author + community admins.
+  `pending` rows stay visible during the brief window before
+  classification — small risk window for not silently breaking new posts
+  if the moderation pipeline is briefly down.
+- `moderation_decisions` table — append-only audit log of every
+  classification (AI + admin overrides), keyed by `(source_table,
+  source_id)`.
+- `list_pending_moderation(limit)` helper — used by the backfill cron.
+- `apply_moderation_decision(...)` helper — atomically updates the source
+  row's moderation columns AND appends to the audit log in one
+  transaction. All moderation writes (AI + admin) route through this so
+  the audit log can never drift from the source's actual status.
+
+### Application
+
+`frontend/lib/moderation/` — three modules behind a barrel index:
+
+- `client.ts` — `classifyContent(text, context)` wraps Anthropic's
+  `/v1/messages` endpoint with a versioned moderation prompt
+  (`PROMPT_VERSION`). Pinned to `claude-haiku-4-5` for cost + speed.
+  Self-harm is an independent flag — severity drives the routing
+  decision but self-harm posts are NEVER auto-hidden.
+- `moderate-row.ts` — `moderateRow(table, rowId)` is the workhorse.
+  Fetches the row, classifies, applies the decision via
+  `apply_moderation_decision()`. `moderateRowAsync` is the
+  fire-and-forget variant. `applyAdminOverride()` is the admin path.
+- `index.ts` — barrel export.
+
+### Background work
+
+`frontend/app/api/cron/moderation-backfill/route.ts` — runs every 15
+minutes via Vercel Cron. Same `Bearer $CRON_SECRET` auth pattern as the
+other cron jobs. `BATCH_SIZE=25` per tick to stay under the 60-second
+function budget at 1-2 sec per Anthropic call.
+
+### Inline trigger
+
+`frontend/app/artists/[slug]/community/actions.ts` — same 5 server
+actions where `indexRowAsync` is wired now also call `moderateRowAsync`
+fire-and-forget. Both run in parallel.
+
+### Admin UI
+
+`frontend/app/admin/moderation/page.tsx` — server component that lists
+flagged posts + comments with severity, category chips, AI reasoning,
+and three action buttons (Approve / Hide / Re-queue). Self-harm content
+is marked with a violet badge and an explicit don't-hide warning.
+Linked from the admin nav (`/admin/layout.tsx`) as "Moderation".
+
+## Setup steps for Phase 2
+
+### Step 1 — Run migration 0025 in Supabase
+
+Open https://supabase.com/dashboard/project/uhovonrljcauaoctypbg/sql/new
+and paste the contents of `supabase/migrations/0025_moderation.sql`.
+
+Verify:
+
+```sql
+\d public.community_posts        -- should show moderation_* columns
+select count(*) from public.moderation_decisions;  -- 0 on first run
+select count(*) from public.list_pending_moderation(5);
+```
+
+### Step 2 — Add `ANTHROPIC_API_KEY` to Vercel
+
+https://vercel.com/jonas-group/fan-engage/settings/environment-variables
+→ Add New → name `ANTHROPIC_API_KEY`, value = your `sk-ant-...` key,
+applied to all three environments.
+
+### Step 3 — Redeploy
+
+Push any commit (the env var bakes in next build), or click Redeploy on
+the latest deployment.
+
+After the next cron tick (within 15 min of redeploy), all the existing
+`pending` posts get classified. Watch `/admin/moderation` — most of the
+seeded content should classify as `safe` and never appear there. Any
+that surface are exactly the rows worth a human eye.
+
+## Verifying it works
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  https://fan-engage-pearl.vercel.app/api/cron/moderation-backfill
+```
+
+Expected response after first run:
+
+```json
+{
+  "ok": true,
+  "summary": {
+    "totalCandidates": 18,
+    "processed": 18,
+    "byStatus": { "classified": 18 },
+    "byTable": { "community_posts": 12, "community_comments": 6 },
+    "byClassification": { "safe": 17, "flag_review": 1 },
+    "selfHarmFlagged": 0,
+    "errors": [],
+    "durationMs": 28341
+  }
+}
+```
+
+Then in SQL:
+
+```sql
+select moderation_status, count(*)
+from public.community_posts group by 1;
+
+-- Recent admin decisions
+select decided_by, new_status, count(*)
+from public.moderation_decisions
+where created_at > now() - interval '1 day'
+group by 1, 2;
+```
+
+## Operational notes
+
+### Costs
+
+Claude Haiku 4.5: $0.25/M input, $1.25/M output. Per classification:
+~200 input + ~150 output tokens = ~$0.0001. Steady-state cost at 1k
+posts/month = $0.10/month.
+
+### Self-harm policy
+
+The classifier flags self-harm independently from the routing decision.
+Per `FAN_ENGAGE_AI_RECOMMENDATIONS.md`, self-harm posts:
+
+- **Stay visible.** They're help-seeking. Hiding them is harmful.
+- Get the violet `Self-harm signal` badge in the admin queue.
+- **Should be checked on by an admin or community moderator** — surface
+  crisis resources to the author rather than removing the post.
+
+A future commit will wire a "Send crisis resources" button into the
+admin queue card that DMs the author a vetted list of helplines (988
+Suicide & Crisis Lifeline, NAMI HelpLine, etc.). For now: admins
+manually outreach.
+
+### When to re-classify
+
+Bump `PROMPT_VERSION` in `frontend/lib/moderation/client.ts` whenever
+the prompt changes meaningfully. Then run a one-off SQL update to mark
+older rows as `pending` so the cron picks them back up:
+
+```sql
+update public.community_posts
+set moderation_status = 'pending'
+where moderation_prompt_version != 'v2';  -- new version
+```
+
+### Failure modes
+
+- **`ANTHROPIC_API_KEY` missing** — every classify call returns 503;
+  `pending` rows pile up. Admin queue stays empty.
+- **Anthropic 429 / 5xx** — `ModerationError` raised; cron records the
+  error in the per-row summary, marks the row as still `pending`, and
+  next cron tick retries.
+- **Classifier returns malformed JSON** — strict parser rejects it,
+  raises `ModerationError`. We never silently default to "safe".
+
+All recoverable; nothing requires code changes.
