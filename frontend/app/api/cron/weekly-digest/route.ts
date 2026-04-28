@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
  *   3. For each recipient: gather → summarize → render → PUT Mailchimp
  *      merge fields. Capture rendered HTML for digest_log audit.
  *   4. After per-fan prep, fire ONE Mailchimp campaign that injects each
- *      recipient's *|DIGEST_BLOCK|* merge value at send time.
+ *      recipient's *|DIGESTHTML|* merge value at send time.
  *   5. Record one digest_log row per fan, plus the campaign id.
  *
  * Returns a structured summary so the cron caller can audit each run.

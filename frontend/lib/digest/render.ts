@@ -1,7 +1,7 @@
 /**
  * Renders a fan's DigestPayload into HTML + plain-text.
  *
- * The HTML output is meant to be stuffed into the Mailchimp DIGEST_BLOCK
+ * The HTML output is meant to be stuffed into the Mailchimp DIGESTHTML
  * merge field. The shell of the email — Fan Engage logo, footer, sender
  * info, unsubscribe link — lives in the Mailchimp template. We supply
  * just the per-fan body content.
@@ -23,7 +23,7 @@ import type {
 } from "./types";
 
 /** Mailchimp default merge-field max length is 80 chars; we set
- *  DIGEST_BLOCK to a higher max in the audience config (recommend 6000).
+ *  DIGESTHTML to a higher max in the audience config (recommend 6000).
  *  This is the safety cap we enforce locally to avoid surprising anyone. */
 const MAX_HTML_LENGTH = 6000;
 
@@ -63,7 +63,7 @@ interface RenderResult {
  * Render the payload into HTML + plain-text.
  *
  * Returns:
- *   html: ready to drop into the DIGEST_BLOCK Mailchimp merge field
+ *   html: ready to drop into the DIGESTHTML Mailchimp merge field
  *   text: plain-text fallback (multipart/alternative)
  */
 export function renderDigestPayload(payload: DigestPayload): RenderResult {
