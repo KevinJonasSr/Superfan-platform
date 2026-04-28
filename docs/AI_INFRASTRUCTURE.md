@@ -615,3 +615,229 @@ V1 trusts Anthropic's tier-1 rate limit (50 RPM, plenty for our user
 base). If we see abuse (one user spamming the ✨ button), add a small
 Redis-backed limiter at the route. Until then it's premature
 optimization.
+
+---
+
+# Phase 4 — Weekly digest emails (recommendation #4)
+
+The digest cron shipped in Phase 4 sends every active opted-in fan a
+personalized weekly email — top posts, upcoming events, a reward they
+can afford, and an AI-generated "vibe of the week" line per
+community. Sundays 09:00 UTC.
+
+## What's wired up
+
+### Database
+
+`supabase/migrations/0027_digest.sql` adds:
+
+- `fans.digest_subscribed boolean default true` — per-fan opt-out for
+  the digest specifically (additional to `email_opted_in`).
+- `fans.last_digest_sent_at timestamptz` — bookkeeping for the cron's
+  6-day safety window so retries / partial sends never double-deliver.
+- `digest_log` table — one row per `(fan_id, week_start)`. Captures
+  rendered HTML, text fallback, Mailchimp campaign id, AI summary
+  count, and `payload_post_ids[]` for impression analytics.
+- `list_digest_recipients(limit)` helper — returns active opted-in
+  fans whose last digest is >6 days old.
+
+### Application
+
+`frontend/lib/digest/`:
+
+- `types.ts` — shared types (DigestRecipient, DigestPostHighlight,
+  DigestEvent, DigestRewardSuggestion, DigestCommunityBlock,
+  DigestPayload).
+- `gather.ts` — `gatherDigestPayload(recipient)` walks the fan's
+  followed artists (top 3 most-recently-followed), pulls top posts
+  from the last 7 days ranked by reactions+comments, upcoming events
+  they haven't RSVP'd to, and a reward suggestion (most aspirational
+  affordable). Filters out `auto_hide` moderation rows so toxic
+  content never features.
+- `summarize.ts` — `summarizeAllCommunities(payload)` calls Claude
+  Haiku 4.5 once per community block to generate a 12-22 word
+  newsroom-dry vibe summary. Has a fallback path that ships the
+  digest even if `ANTHROPIC_API_KEY` is missing.
+- `render.ts` — `renderDigestPayload(payload)` returns
+  `{ html, text }`. Email-safe HTML (inline styles, no fonts/images)
+  meant for the Mailchimp `DIGEST_BLOCK` merge field. Every link
+  carries UTM params for click-through measurement.
+- `send.ts` — `prepareDigestForFan(recipient)` runs the full
+  gather→summarize→render pipeline + PUTs the merge fields into
+  Mailchimp. `fireDigestCampaign(count)` creates + sends ONE
+  campaign that templates `*|DIGEST_BLOCK|*` — Mailchimp inlines
+  each recipient's merge values. `recordDigestSent(...)` upserts the
+  audit row.
+- `index.ts` — barrel.
+
+`frontend/app/api/cron/weekly-digest/route.ts` — the scheduled GET.
+
+`frontend/vercel.json` — `0 9 * * 0` cron entry.
+
+## Setup steps for Phase 4
+
+There are three things you need to do before the weekly digest fires:
+
+### Step 1 — Run migration 0027 in Supabase
+
+Open https://supabase.com/dashboard/project/uhovonrljcauaoctypbg/sql/new
+and paste the contents of `supabase/migrations/0027_digest.sql`.
+
+Verify:
+
+```sql
+\d public.digest_log
+select count(*) from public.list_digest_recipients(500);
+```
+
+### Step 2 — Add custom merge fields in Mailchimp
+
+The digest pipeline writes per-fan rendered HTML into a Mailchimp
+custom merge field called `DIGEST_BLOCK`, plus a plain-text fallback
+in `DIGEST_TEXT`. These don't exist in the audience by default —
+you have to create them once.
+
+1. Open https://us21.admin.mailchimp.com/audience/settings/merge-fields/
+   (replace `us21` with your actual server prefix; the same one in
+   `MAILCHIMP_SERVER_PREFIX`).
+2. Click **Add a field** → **Text** field.
+   - **Field label**: `Digest HTML Block`
+   - **Field tag**: `DIGEST_BLOCK`
+   - **Visible**: unchecked (don't show it in subscriber profiles)
+   - **Required**: unchecked
+   - **Default value**: leave empty
+   - **Click "Save changes"**
+3. Repeat for `DIGEST_TEXT`:
+   - **Field label**: `Digest Text Fallback`
+   - **Field tag**: `DIGEST_TEXT`
+   - same settings as above
+4. Mailchimp's default text-field max length is 80 characters. The
+   digest HTML can be up to 6,000 chars. **Increase both fields'
+   max length to 6000** in the field's edit modal (look for the
+   "Max length" input — Mailchimp may not show this for default
+   text fields, in which case you'll need to use a "Long text" type
+   if available, or split the rendered HTML into multiple smaller
+   merge fields. For initial testing, 1500-character digests fit
+   in the default 80-char limit only if your audience has the
+   higher-tier setting; check your Mailchimp plan).
+
+If Mailchimp's UI doesn't let you raise the merge-field max above
+255 for your tier, the V1 fallback is to use multiple structured
+merge fields (`DIGEST_VIBE_1`, `DIGEST_TOP_POST_1_TITLE`, etc.)
+and a richer template. That's a follow-up; ship the simple version
+first and see if it bumps against the limit.
+
+### Step 3 — (Optional) Set up a Mailchimp template
+
+The cron's `fireDigestCampaign()` ships a default minimal template
+inline. You can replace it with a branded template in the Mailchimp
+dashboard:
+
+1. Templates → Create template
+2. Use a layout that has a content block
+3. In the content area, drop `*|FNAME|*` and `*|DIGEST_BLOCK|*` merge
+   tags
+4. Save the template name. (For V1 we don't reference a saved
+   template — `cron-route.ts` posts the HTML inline. To use a saved
+   template later, modify `fireDigestCampaign()` to set
+   `template.id` instead of posting `content.html`.)
+
+## Verifying it works
+
+Run the cron manually once you've completed Steps 1 and 2:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  https://fan-engage-pearl.vercel.app/api/cron/weekly-digest
+```
+
+Expected response on the first run:
+
+```json
+{
+  "ok": true,
+  "aiAvailable": true,
+  "summary": {
+    "totalCandidates": 12,
+    "prepared": 8,
+    "preparedWithMailchimp": 8,
+    "skipped": 4,
+    "errors": [],
+    "campaignId": "abc123def456",
+    "campaignError": null,
+    "weekStart": "2026-04-27",
+    "durationMs": 31420
+  }
+}
+```
+
+`skipped` covers fans who follow no artists or have no fresh content
+this week — that's correct behavior, not an error.
+
+Then in SQL:
+
+```sql
+select status, count(*) from public.digest_log group by 1;
+
+-- Most-recent run details
+select fan_id, status, ai_summary_count, array_length(payload_communities, 1) as communities,
+       array_length(payload_post_ids, 1) as posts,
+       length(html_body) as html_chars, mailchimp_campaign_id
+from public.digest_log
+order by sent_at desc limit 10;
+```
+
+## Operational notes
+
+### Costs
+
+Anthropic Claude Haiku 4.5 at $0.25/M input + $1.25/M output. Per
+fan: ~3 community-summary calls × ~250 input + ~50 output tokens =
+~$0.0003. At 200 active fans: $0.06/week = $3/year.
+
+Mailchimp: PUTs to the audience are free; the campaign send falls
+under your existing plan's monthly send limit.
+
+### Function-timeout caveat
+
+The cron processes recipients sequentially. Per-fan latency is
+gather (~200ms) + summarize (~3s for 3 Anthropic calls) + Mailchimp
+PUT (~200ms) ≈ **3.5s per fan**. On Vercel Hobby's 60s function
+timeout that's ~15 fans per cron run; if you have more than that,
+the run times out and remaining fans roll into next Sunday's run
+(they're picked up because `last_digest_sent_at` is still null).
+
+If/when the audience grows past 15 fans:
+
+- Upgrade Vercel project to Pro (300s function timeout) — covers
+  ~85 fans per run.
+- Or switch to per-fan Vercel queue jobs (Inngest, Upstash Q, or
+  Vercel's own queue).
+- Or batch the Anthropic summarize calls (one prompt covering all
+  3 communities for a fan, which cuts 3 calls down to 1) — easy
+  win, ~3× speedup, ~5x faster runs.
+
+### Self-harm + auto-hide content
+
+The gather step explicitly filters `moderation_status` to
+`('pending', 'safe', 'flag_review')` — so `auto_hide` posts NEVER
+show up in a digest. Same for `community_comments` when computing
+comment counts. This is the same content-safety guarantee the live
+feed has, applied to the email channel.
+
+### Failure modes
+
+- **`MAILCHIMP_*` env vars missing** — the cron still gathers,
+  summarizes, and renders for each fan; the digest_log row gets
+  status `'rendered'` (not sent). You can inspect the HTML body
+  in the audit table even before Mailchimp is set up. Useful for
+  staging tests.
+- **`ANTHROPIC_API_KEY` missing** — fallback summaries kick in
+  ("RaeLynn this week: 2 top posts and 1 upcoming event."). Less
+  magical but still ships.
+- **Mailchimp campaign create fails** — every prepared fan still
+  has their merge fields set; next Sunday's run will overwrite
+  them and try again. Worst case, fans get next week's email a
+  week late.
+- **Audience contains fans not in `fans` table** — Mailchimp PUT
+  doesn't care; we always upsert the merge fields by email hash.
