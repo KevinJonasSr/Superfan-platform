@@ -17,6 +17,7 @@ const adminNav = [
   { href: "/admin/redemptions", label: "Redemptions" },
   { href: "/admin/fans", label: "Fans" },
   { href: "/admin/policies", label: "Policies" },
+  { href: "/admin/moderation", label: "Moderation" },
 ];
 
 export default async function AdminLayout({
