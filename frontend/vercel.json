@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/refresh-monthly-credits",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/embeddings-backfill",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
