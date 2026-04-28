@@ -1436,3 +1436,144 @@ In `lib/captions/client.ts`:
   body text. If a fan picks an AI caption, run the tagger
   immediately on the resulting body so the post lands in the right
   filter chip without waiting for the cron.
+
+---
+
+## Phase 15 — Engagement anomaly detection (admin daily brief)
+
+Daily cron summarizes platform + per-community week-over-week metrics
+into a Slack-ready narrative. Admins see history at `/admin/briefs`;
+optional Slack delivery via webhook. Recs doc #15, Score 3.0.
+
+### Pipeline
+
+```
+13:00 UTC daily
+  │
+  ▼
+GET /api/cron/daily-admin-brief
+  │
+  ▼
+gatherAdminBriefMetrics(now)
+  │  ├─ per-community: posts / comments / reactions / signups /
+  │  │  active_fans / top_post (this week vs last week)
+  │  └─ platform: signups / points_awarded + sums of community metrics
+  │  └─ rule-based anomaly detector
+  │
+  ▼
+summarizeAdminBrief(metrics)
+  │  Claude Haiku 4.5 (or deterministic fallback if API key missing)
+  │  → plain-text Slack-ready brief, ≤ 80 lines
+  │
+  ▼
+persistAndDispatchBrief(metrics, summary, ms)
+  │  ├─ INSERT admin_briefs row (always)
+  │  ├─ POST Slack webhook (if SLACK_ADMIN_WEBHOOK_URL set)
+  │  └─ stamp channels_sent on the row
+  │
+  ▼
+{ ok, brief_id, channels_sent, errors, took_ms }
+```
+
+### Files
+
+- `supabase/migrations/0032_admin_briefs.sql` — storage table.
+- `lib/admin-brief/gather.ts` — WoW metrics + anomaly detection.
+- `lib/admin-brief/summarize.ts` — Claude wrapper + fallback.
+- `lib/admin-brief/send.ts` — persist + Slack delivery.
+- `lib/admin-brief/index.ts` — barrel.
+- `app/api/cron/daily-admin-brief/route.ts` — cron endpoint.
+- `app/admin/briefs/page.tsx` — admin view.
+- `frontend/vercel.json` — `0 13 * * *` schedule entry.
+
+### Setup
+
+1. Migration 0032 must be applied (creates admin_briefs table).
+2. (Optional) Slack:
+   - In Slack, create an Incoming Webhook in the channel where
+     admins should receive the brief (e.g. #fan-engage-admin).
+   - Copy the webhook URL.
+   - In Vercel project env vars, set
+     `SLACK_ADMIN_WEBHOOK_URL=https://hooks.slack.com/services/...`
+   - Trigger a redeploy. Next cron run will post to Slack.
+3. Without the env var, briefs still persist + render at
+   `/admin/briefs` — Slack is purely additive.
+
+### Costs
+
+Claude Haiku 4.5 at $0.25/M input + $1.25/M output. The user prompt
+is the metrics jsonb (~600 tokens for a 6-community platform), the
+output is ~600 tokens (the brief). Per run ≈ $0.0009. Daily cron =
+~$0.027/month. Negligible.
+
+### Tunables
+
+In `lib/admin-brief/gather.ts`:
+
+- The 7-day window is hard-coded. To change to 14-day, swap the `t7`
+  / `t14` math in `gatherAdminBriefMetrics`.
+- Anomaly thresholds:
+  - Signup spike: 3x or more vs prior week.
+  - Engagement drop: ≤ −20% (warn at ≤ −40%).
+  - Engagement jump: ≥ +20%.
+  - Quiet community: posts went from N>0 to 0.
+  All defined in `detectAnomalies`. Bump the floors if briefs feel
+  noisy; lower them if drops aren't being flagged.
+
+In `lib/admin-brief/summarize.ts`:
+
+- `temperature: 0.3` — leans deterministic. Bump to 0.5 if briefs
+  feel mechanical; lower to 0.1 for maximum consistency.
+- `max_tokens: 1200` — covers ~80 lines of plain text comfortably.
+
+In `vercel.json`:
+
+- Schedule is `0 13 * * *` (13:00 UTC = 8am Central). Adjust if your
+  team is in a different timezone or wants a later read time.
+
+### Failure modes
+
+- **No active communities** — gather returns empty arrays, summarize
+  returns "Quiet week — no posts in either window."
+- **ANTHROPIC_API_KEY missing** — `summarizeAdminBrief` returns the
+  deterministic fallback narrative. Cron continues to work.
+- **Anthropic API error** — `AdminBriefError` thrown; cron returns
+  500 with the error message and DOES NOT persist a row. Next-day
+  retry happens normally.
+- **Supabase down mid-gather** — partial metrics may have been
+  computed; the eventual `admin_briefs.insert` fails; cron returns
+  500. No row persisted, no Slack ping.
+- **Slack webhook 4xx/5xx** — recorded in `errors[]` but doesn't fail
+  the run; the row still inserts and `channels_sent` stays empty.
+
+### Honest scope notes (what we DIDN'T build)
+
+- **IP-block bot detection** (the recs doc's "47 signups from one IP
+  block" example): the `fans` table doesn't track signup IPs today.
+  Adding it requires either a `fans.signup_ip inet` column populated
+  by the signup flow OR pulling from `auth.audit_log_entries` (a
+  Supabase-internal schema). v2 follow-up — meanwhile, anomaly
+  detection just flags volume spikes without source attribution.
+- **Per-community points attribution**: `points_ledger` is global
+  (no `community_id` column). We surface platform-total points
+  awarded only. To attribute per-community, add a column + backfill
+  from existing rows (challenge points → tagged community,
+  community_post points → artist_slug → community_id, etc.).
+- **Email channel**: Slack covers the typical admin team. Email is a
+  v2 add — consider Resend (cheaper than Mailchimp Campaigns for
+  transactional admin mail).
+
+### Future (V2)
+
+- **Inline charts in /admin/briefs** — sparkline of WoW per
+  community.
+- **Trend memory** — feed the previous 3 briefs into the prompt so
+  the summarizer can say "RaeLynn engagement has now dropped 3
+  weeks in a row — investigate" instead of treating each brief in
+  isolation.
+- **Per-admin filtering** — surface only the communities each admin
+  has access to (the `admin_users` table is per-community). Right
+  now everyone sees the platform-wide brief.
+- **Anomaly-only Slack** — opt-in setting where Slack only fires
+  when severity=warn anomalies are present, to reduce noise on
+  calm weeks.

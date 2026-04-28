@@ -999,6 +999,130 @@ until both metrics support it.
 
 ---
 
+## 📰 AI feature metrics — daily admin brief (Phase 15)
+
+The cron generates a Slack-ready narrative every day at 13:00 UTC
+and persists to `admin_briefs`. Admins read it at /admin/briefs.
+
+### Cron heartbeat (must be writing rows daily)
+
+```sql
+select
+  date_trunc('day', created_at) as day,
+  count(*)                       as briefs,
+  array_agg(channels_sent)       as channels
+from public.admin_briefs
+where created_at > now() - interval '14 days'
+group by 1
+order by 1 desc;
+```
+
+There should be exactly one row per day. If there's a gap, check
+Vercel logs for `/api/cron/daily-admin-brief` (likely cause:
+ANTHROPIC_API_KEY transient failure or Supabase write failure —
+either of those skips the row entirely).
+
+### Slack delivery rate
+
+```sql
+select
+  count(*) filter (where 'slack' = any(channels_sent)) as slack_delivered,
+  count(*) as total
+from public.admin_briefs
+where created_at > now() - interval '30 days';
+```
+
+If slack_delivered is 0 but total is > 0, SLACK_ADMIN_WEBHOOK_URL
+isn't set or the webhook is invalid. Check Vercel env vars.
+
+### Anomaly volume sanity (post-launch)
+
+```sql
+-- Per-day count of warn-level anomalies. A spike here usually
+-- means a real problem worth investigating.
+select
+  date_trunc('day', created_at) as day,
+  jsonb_array_length(metrics->'anomalies') as anomaly_count,
+  (
+    select count(*)
+    from jsonb_array_elements(metrics->'anomalies') a
+    where a->>'severity' = 'warn'
+  ) as warn_count
+from public.admin_briefs
+where created_at > now() - interval '30 days'
+order by 1 desc;
+```
+
+### Setup checklist
+
+Before launch:
+
+  - [ ] Apply migration 0032 in Supabase (creates admin_briefs).
+  - [ ] (Optional) Create a Slack incoming webhook in the admin
+        channel and set SLACK_ADMIN_WEBHOOK_URL in Vercel.
+  - [ ] Verify the cron is registered in vercel.json:
+        `0 13 * * *` for /api/cron/daily-admin-brief.
+  - [ ] Trigger one manual run via curl with CRON_SECRET to confirm
+        end-to-end before the first scheduled fire:
+        ```
+        curl -i -H "Authorization: Bearer $CRON_SECRET" \
+          https://fan-engage-pearl.vercel.app/api/cron/daily-admin-brief
+        ```
+        Expect 200 + a row in admin_briefs.
+
+### Smoke test (when there's enough activity to be meaningful)
+
+Don't bother running until the platform has at least one community
+that's posted in both this-week and last-week buckets — otherwise
+every brief will say "Quiet week."
+
+When ready:
+
+1. **Manual trigger fires** — curl the cron endpoint with
+   CRON_SECRET. 200 response with brief_id + took_ms.
+2. **Row persists** — table editor shows the new admin_briefs row
+   with non-empty summary + non-empty metrics jsonb.
+3. **/admin/briefs renders** — sign in as admin, hit
+   /admin/briefs. Latest brief is expanded by default; older ones
+   collapsed.
+4. **Summary readable** — narrative is plain text, ≤ 80 lines, no
+   markdown table garbage. References specific community names
+   and concrete numbers.
+5. **Anomaly bullet appears** — manually delete a community's
+   posts in a test community to force a no_activity anomaly.
+   Re-run the cron. Brief shows the anomaly in the heads-up section.
+6. **Slack arrives (if configured)** — check the configured admin
+   channel. Message body matches the persisted summary.
+7. **Slack failure recorded** — temporarily set
+   SLACK_ADMIN_WEBHOOK_URL to a malformed URL. Re-run cron. Brief
+   still persists; channels_sent is empty; errors[] in the cron
+   response includes a Slack failure message.
+8. **AI failure soft-falls back** — temporarily unset
+   ANTHROPIC_API_KEY. Re-run cron. Brief persists with the
+   deterministic non-AI narrative; model column still records the
+   intended model.
+9. **Empty platform doesn't crash** — drop all active=true on
+   communities (don't actually do this — just spot-check the
+   gather.ts logic with all-empty community list). Cron should
+   produce a "Quiet week" summary, not error out.
+10. **Window math correct** — pick a brief, copy its window_end.
+    Run gather.ts metrics manually with that windowEnd. Numbers
+    should match what's in the persisted metrics jsonb (within
+    rounding).
+
+After all 10 pass, briefs are launch-ready.
+
+### V2 paths documented in AI_INFRASTRUCTURE.md
+
+- Email channel via Resend
+- IP-block bot detection
+- Per-community points attribution (needs points_ledger.community_id)
+- Multi-week trend memory in the summarizer prompt
+- Per-admin filtering by admin_users.community_id
+- Anomaly-only Slack mode
+
+---
+
 ---
 
 ## ✅ Done
