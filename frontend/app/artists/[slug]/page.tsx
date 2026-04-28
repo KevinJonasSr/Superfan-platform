@@ -14,6 +14,24 @@ import PremiumPaywall from "@/components/premium-paywall";
 import FollowButton from "./follow-button";
 import RsvpButton from "./rsvp-button";
 
+
+/**
+ * Per-artist hero focal-point overrides (vertical %).
+ *
+ * The default is 30 — biased toward the upper third of the photo so
+ * portrait subjects' faces stay visible in the wide hero. Some photos
+ * have the subject framed lower (e.g. waist-up vs head-and-shoulders);
+ * those need a higher value to bring the face into the visible band.
+ *
+ * This is a tactical patch. The proper fix — an admin-editable
+ * `hero_focal_y` column + slider in /admin/artists/[slug] — is logged
+ * in LAUNCH_CHECKLIST.md under the post-launch backlog.
+ */
+const HERO_FOCAL_Y_BY_SLUG: Record<string, number> = {
+  "hunter-hawkins": 60,
+};
+const DEFAULT_HERO_FOCAL_Y = 30;
+
 export const dynamic = "force-dynamic";
 
 export async function generateStaticParams() {
@@ -123,7 +141,7 @@ export default async function ArtistPage({
               // upper-mid of most portrait photos where faces sit. If a
               // specific artist's photo needs different framing, consider
               // adding a per-artist `hero_focal_y` column.
-              style={{ objectPosition: "center 30%" }}
+              style={{ objectPosition: `center ${HERO_FOCAL_Y_BY_SLUG[artist.slug] ?? DEFAULT_HERO_FOCAL_Y}%` }}
               className="absolute inset-0 h-full w-full object-cover"
               aria-hidden
             />
