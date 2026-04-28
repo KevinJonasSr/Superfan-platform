@@ -849,3 +849,178 @@ feed has, applied to the email channel.
   week late.
 - **Audience contains fans not in `fans` table** — Mailchimp PUT
   doesn't care; we always upsert the merge fields by email hash.
+
+---
+
+# Phase 5 — Auto-tagging community posts (recommendation #5)
+
+The tagging classifier shipped in Phase 5 puts every new post through
+Claude Haiku 4.5 to assign 1-4 tags from a closed vocabulary
+(`live_show`, `merch_drop`, `studio_session`, etc.). Tags surface as
+clickable filter chips on the community feed and become the substrate
+for future recommendation, search, and analytics features.
+
+## What's wired up
+
+### Database
+
+`supabase/migrations/0028_post_tags.sql` adds:
+
+- `community_posts.tags text[] not null default '{}'`
+- `community_posts.tagged_at timestamptz` — null = pending
+- `community_posts.tag_model + tag_prompt_version` — re-classification
+  provenance, mirrors moderation columns
+- **GIN index on `tags`** for fast `@>` (contains) and `&&` (overlaps)
+  queries used by the filter chips
+- Partial btree index on `(created_at desc) where tagged_at is null`
+  for the backfill cron's "find work" query
+- `list_untagged_posts(limit)` — backfill cron's work-finder. Filters
+  out auto_hide moderation rows
+- `list_top_tags_for_community(slug, limit)` — most-used tags per
+  community with counts. Powers the filter chip render (security
+  invoker; respects RLS on community_posts)
+
+### Application
+
+`frontend/lib/tagging/`:
+
+- `client.ts` — `classifyTags(input)` wraps Claude Haiku 4.5.
+  CANONICAL_TAGS is a 21-string closed vocabulary (20 + `other`).
+  Versioned via `TAG_PROMPT_VERSION`. Defensive parser validates
+  every returned tag against the vocabulary, dedupes, caps at 4.
+- `tag-row.ts` — `tagRow(postId)` workhorse: fetches post + artist
+  genres for context, calls classifier, updates row. Skips
+  auto_hide. `tagRowAsync` is the fire-and-forget variant.
+- `index.ts` — barrel.
+
+### Inline trigger
+
+`frontend/app/artists/[slug]/community/actions.ts` — same 4
+community_posts insert paths where `indexRowAsync` and
+`moderateRowAsync` are wired now also call `tagRowAsync`. All three
+run in parallel as fire-and-forget. Comments are **not** tagged.
+
+### Background work
+
+`frontend/app/api/cron/tags-backfill/route.ts` — every 15 min,
+classifies posts with `tagged_at is null`. Same auth + 503 patterns.
+BATCH_SIZE=30 keeps each tick under Vercel's 60s function timeout.
+
+### UI surface
+
+`frontend/app/artists/[slug]/community/page.tsx`:
+
+- Reads `?tag=foo` from searchParams → server-side filters posts via
+  the GIN index
+- Parallel-fetches the top 10 tags for the community
+
+`frontend/app/artists/[slug]/community/tag-filter-chips.tsx`:
+
+- `"use client"` component. Click a chip → URL updates → page
+  re-fetches with the filter applied. "All" chip clears.
+- Pretty-labels snake_case canonical tags ("live_show" → "Live Shows")
+- Hidden entirely if the artist has no tagged posts yet
+
+## Setup steps for Phase 5
+
+Just one — run the migration. No new env vars needed since
+`ANTHROPIC_API_KEY` from Phase 2 covers it.
+
+### Run migration 0028 in Supabase
+
+Open https://supabase.com/dashboard/project/uhovonrljcauaoctypbg/sql/new
+and paste the contents of `supabase/migrations/0028_post_tags.sql`.
+
+Verify:
+
+```sql
+\d public.community_posts        -- should show tags + tagged_at + tag_* columns
+
+select * from public.list_untagged_posts(5);
+select * from public.list_top_tags_for_community('raelynn', 10);
+```
+
+After the migration runs, the `*/15 * * * *` `tags-backfill` cron will
+classify all existing posts within 15-30 minutes of the next deploy.
+A typical first-run summary:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  https://fan-engage-pearl.vercel.app/api/cron/tags-backfill
+```
+
+```json
+{
+  "ok": true,
+  "summary": {
+    "totalCandidates": 9,
+    "processed": 9,
+    "byStatus": { "tagged": 9 },
+    "errors": [],
+    "durationMs": 13420
+  }
+}
+```
+
+## Verifying the UI
+
+After tags land, visit any artist's community feed:
+
+1. https://fan-engage-pearl.vercel.app/artists/raelynn/community
+2. Filter chips appear at the top showing the most-used tags + counts
+3. Click a chip → URL becomes `?tag=live_show` → only matching posts
+4. Click "All" to clear
+
+Spot-check via SQL:
+
+```sql
+-- Tag distribution per community
+select artist_slug, t.tag, count(*)
+from public.community_posts p, unnest(p.tags) as t(tag)
+where p.tagged_at is not null
+group by 1, 2
+order by 1, count(*) desc;
+```
+
+## Operational notes
+
+### Costs
+
+Claude Haiku 4.5 at $0.25/M input + $1.25/M output. Per post:
+~150 input + ~50 output tokens = ~$0.0001. 1k posts/month = $0.10.
+
+### When to bump TAG_PROMPT_VERSION
+
+Bump the constant in `frontend/lib/tagging/client.ts` whenever:
+
+- The closed vocabulary changes (added, removed, or renamed tags)
+- The system prompt changes meaningfully (e.g. new examples)
+- The classifier model is upgraded
+
+After bumping, mark stale rows for re-classification:
+
+```sql
+update public.community_posts
+set tagged_at = null
+where tag_prompt_version != 'v2';  -- new version
+```
+
+The backfill cron picks them up within 15 min and re-tags.
+
+### Self-harm + auto_hide content
+
+Posts with `moderation_status = 'auto_hide'` are excluded from
+`list_untagged_posts` and `list_top_tags_for_community`, so toxic
+content never gets tags assigned and never appears in filter chip
+counts.
+
+### Failure modes
+
+- **`ANTHROPIC_API_KEY` missing** — every classify call returns 503;
+  `tagged_at` stays null. Filter chips render with whatever's already
+  tagged. Filter still works on tagged posts; untagged posts just
+  don't match any tag filter.
+- **Anthropic 429 / 5xx** — `TagError` raised; row stays
+  `tagged_at = null`; next cron tick retries.
+- **Classifier returns invalid tag** — defensive parser rejects it,
+  falls back to ['other']. Never persists garbage tags.
