@@ -468,6 +468,86 @@ shipping more AI features on top.
 
 ---
 
+## 🔍 AI feature metrics — semantic search (Phase 6)
+
+Search ships dark — there's no separate event log table; we lean on
+Vercel Analytics + runtime logs to track usage. The queries below
+help validate quality + cost without building a logging schema we
+might not need.
+
+### Smoke test (run from the Supabase SQL editor)
+
+```sql
+-- Confirm content_embeddings has rows from every source_table.
+-- If any of these is 0, search will silently miss that surface.
+select source_table, count(*) as embeddings
+from public.content_embeddings
+group by 1
+order by 1;
+```
+
+Expect non-zero counts for `community_posts`, `community_comments`,
+`communities`, `artist_events`, `rewards_catalog`. If a row is
+missing, check the embedding cron + the inline-trigger paths in the
+relevant server actions.
+
+### Visibility filter sanity check
+
+```sql
+-- Search uses p_visibility = 'public' by default. Anything below
+-- 'public' (premium / founder-only) must NOT come back.
+select source_table, visibility, count(*)
+from public.content_embeddings
+group by 1, 2
+order by 1, 2;
+```
+
+If you see meaningful `premium` / `founder-only` row counts, the
+filter inside `search_embeddings()` is what keeps them out of /search
+results — verify by spot-querying the RPC manually with a test
+embedding.
+
+### Query distance distribution (quality tuning)
+
+After search has run for a couple of weeks, sample raw RPC distances
+to validate `MAX_DISTANCE = 0.85` is the right threshold. Ad-hoc:
+
+```sql
+-- Pick a representative query, embed it client-side, paste the
+-- pgvector literal here. Returns the top 30 with their distances —
+-- look at where the relevance cliff actually is.
+select source_table, source_id, distance
+from public.search_embeddings(
+  '[...paste 1536-dim vector...]'::vector,
+  null,
+  'public',
+  null,
+  30
+)
+order by distance asc;
+```
+
+Heuristic: if distances 5–15 already feel off-topic, tighten
+`MAX_DISTANCE` in `lib/search/query.ts` (e.g. 0.7). If distances at
+0.85 still feel relevant and the page shows few results, loosen it.
+
+### Cost watch
+
+OpenAI text-embedding-3-small is so cheap per query that the cost is
+dominated by the indexing-side embedding (one per post / comment /
+event / reward / community). Search-side cost target: < $1/month
+even at 100k queries.
+
+If the OpenAI bill spikes:
+  1. Check the embeddings backfill cron — a stuck loop will reprocess
+     the same rows.
+  2. Check `/api/search` traffic in Vercel Analytics — a bot or
+     someone scripting against the public endpoint can rack up calls.
+     The endpoint is unauth'd by design; if abuse becomes real we'll
+     add IP-based rate limits.
+
+---
+
 ---
 
 ## ✅ Done

@@ -1024,3 +1024,115 @@ counts.
   `tagged_at = null`; next cron tick retries.
 - **Classifier returns invalid tag** — defensive parser rejects it,
   falls back to ['other']. Never persists garbage tags.
+
+---
+
+## Phase 6 — Semantic Search
+
+Global search across the platform, powered by the same embeddings
+infrastructure stood up in Phase 1. Replaces no prior text search —
+this is the first search surface in Fan Engage.
+
+### What it indexes
+
+Every row that gets embedded into `content_embeddings` is searchable:
+
+- `community_posts` — post titles + bodies
+- `community_comments` — comment bodies
+- `communities` — display name, tagline, bio (via md5(slug) source_id)
+- `artist_events` — event titles + details
+- `rewards_catalog` — reward titles + descriptions
+
+Rows with `moderation_status = 'auto_hide'` and inactive events /
+rewards are filtered out at the source-fetch stage — they never
+appear in results even if their embedding row still exists.
+
+### Pipeline
+
+```
+GET /search?q=<query>
+   │
+   ▼
+search(query)  ─►  OpenAI embedText(query)        // 1536-dim vector
+                ─► Postgres search_embeddings RPC // top-30 by cosine
+                ─► distance ≤ 0.85 filter         // drop noise
+                ─► batched fetch per source_table // parallel
+                ─► drop auto_hide / inactive
+                ─► group + cap 8/group
+                ─► SearchResults
+```
+
+### Files
+
+- `lib/search/types.ts` — SearchHit, SearchHitData, SearchResults,
+  SearchSourceTable.
+- `lib/search/query.ts` — `search(query)` workhorse +
+  `fetchAllSourceRows` parallel batched fetcher.
+- `lib/search/index.ts` — barrel export.
+- `app/api/search/route.ts` — public GET endpoint (no auth gate;
+  the RPC visibility filter handles privacy).
+- `app/search/page.tsx` — server-component results page; calls
+  `search()` directly.
+- `components/search-input.tsx` — reusable client input used both
+  on the results page and in the global header (compact variant).
+
+### Tunables
+
+In `lib/search/query.ts`:
+
+- `RAW_LIMIT = 30` — candidate hits pulled from pgvector before
+  grouping. Bump if hit groups feel sparse for niche queries.
+- `PER_GROUP_LIMIT = 8` — max hits surfaced per source_table on the
+  results page.
+- `MIN_QUERY_LENGTH = 2` — single-letter queries are rejected
+  without burning an OpenAI call.
+- `MAX_DISTANCE = 0.85` — cosine distance threshold above which
+  hits are dropped as noise. Tighten (e.g. 0.65) if results feel
+  off-topic; loosen if too many "no results".
+
+### Where it surfaces
+
+- **Desktop header** (`lg:` breakpoint and up) — compact inline
+  search input between nav and user controls.
+- **User menu** — `Search` link under `My rewards` for mobile users
+  whose viewport hides the inline header search.
+- **`/search?q=…`** direct URL.
+
+### Costs
+
+OpenAI text-embedding-3-small at $0.02 / 1M tokens. Per query:
+~10 tokens = $0.0000002. A million queries/month = ~$0.20.
+The `search_embeddings` RPC is local Postgres + pgvector — free.
+
+### Failure modes
+
+- **`OPENAI_API_KEY` missing** — `/api/search` returns 503; the
+  results page shows a "temporarily unavailable" banner.
+- **OpenAI 429 / 5xx** — `EmbeddingError` bubbles up; same banner.
+- **Empty / 1-char query** — UI shows the friendly prompt; no
+  network call.
+- **Source row deleted between embedding + query** — counted as
+  `missingSourceRows` in the response and silently dropped from
+  results.
+
+### Future (V2) — LLM rerank
+
+The current pipeline is pure cosine similarity. The recs doc (#6)
+called out a top-50 → Claude rerank → top-10 step for higher
+precision on long-tail queries. Adding it later is one new file
+(`lib/search/rerank.ts`) and one extra await in `search()`. We
+held off until we can compare pure-vector quality against rerank
+quality on real production queries.
+
+### Future — typeahead / suggestions
+
+Today's input does nothing on each keystroke — submit on Enter
+fires the search. A typeahead variant could:
+
+- Debounce keystrokes 150ms.
+- Hit `/api/search` with a small `&limit=5`.
+- Render a dropdown with the top hits.
+
+The pieces are all there; we just need to add a `?limit=N`
+parameter to the route + workhorse and a small dropdown UI on top
+of `<SearchInput>`.
