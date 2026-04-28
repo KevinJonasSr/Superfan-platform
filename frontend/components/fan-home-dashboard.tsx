@@ -6,7 +6,7 @@ import type { FanHomeData, FanHomeUpcomingEvent } from "@/lib/data/fan-home";
 // `object-top` (head visible for typical top-of-frame portraits).
 // Bump higher when the subject sits low in the source photo.
 const STRIP_FOCAL_Y_BY_SLUG: Record<string, number> = {
-  raelynn: 80,
+  raelynn: 100,
 };
 const STRIP_DEFAULT_FOCAL_Y = 0;
 
