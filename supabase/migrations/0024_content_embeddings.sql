@@ -7,12 +7,14 @@
 --   2. A single `content_embeddings` table that stores embeddings for every
 --      indexed text-bearing row in the platform, keyed by (source_table,
 --      source_id). Content from any of these tables can be embedded:
---        * community_posts (body, title)
---        * post_comments   (body)
---        * communities     (bio + tagline + genres)
---        * artist_events   (title + detail + location)
---        * rewards_catalog (name + description)
---        * offers          (title + description)
+--        * community_posts    (title + body)
+--        * community_comments (body)
+--        * communities        (display_name + tagline + bio)
+--        * artist_events      (title + detail + event_date)
+--        * rewards_catalog    (title + description)
+--      offers is intentionally excluded for V1: that table is global (no
+--      community_id), and we'd need a small schema change to make embedding
+--      it useful for tenant-scoped recommendations. Add later.
 --   3. An HNSW index for fast nearest-neighbor search at scale
 --   4. RLS — anon can read embeddings whose visibility is 'public'; the
 --      actual content access is still gated by the parent table's RLS, so
@@ -28,7 +30,7 @@
 --
 -- Cost reference (OpenAI text-embedding-3-small @ $0.02/1M tokens):
 --   * 50k posts at ~80 tokens each = 4M tokens = $0.08
---   * Backfill of all 5 seeded communities + ~200 events + ~50 rewards = $0.01
+--   * Backfill of all 6 seeded communities + artist events + rewards = $0.01
 --   * Ongoing cost at 1k posts/month = $0.001/month
 --   In other words: this is a rounding error on the bill.
 -- ============================================================================
@@ -45,11 +47,10 @@ create table if not exists public.content_embeddings (
   source_table  text not null
                 check (source_table in (
                   'community_posts',
-                  'post_comments',
+                  'community_comments',
                   'communities',
                   'artist_events',
-                  'rewards_catalog',
-                  'offers'
+                  'rewards_catalog'
                 )),
   source_id     uuid not null,
 
@@ -59,13 +60,10 @@ create table if not exists public.content_embeddings (
   community_id  text not null references public.communities(slug) on delete cascade,
 
   -- Visibility mirror — copies the parent row's visibility so search queries
-  -- can pre-filter without joining the source table. Possible values:
-  --   'public'   — visible to anon and all authenticated members
-  --   'premium'  — only premium-tier members of community_id
-  --   'founder'  — only founder-tier members
-  --   'private'  — only the author + admins
+  -- can pre-filter without joining the source table. Possible values match
+  -- community_posts.visibility plus 'private' for admin-only content.
   visibility    text not null default 'public'
-                check (visibility in ('public', 'premium', 'founder', 'private')),
+                check (visibility in ('public', 'premium', 'founder-only', 'private')),
 
   -- The vector itself. 1536 dimensions matches OpenAI's
   -- text-embedding-3-small. If we ever swap providers, we'll bump this and
@@ -105,10 +103,6 @@ create index if not exists content_embeddings_hnsw_idx
 create index if not exists content_embeddings_community_idx
   on public.content_embeddings (community_id, visibility);
 
--- Lookup index for "find the embedding for this specific row" queries
--- (already covered by the unique constraint above, but explicit for clarity).
--- Postgres uses the unique index automatically.
-
 -- ─── 4. RLS ────────────────────────────────────────────────────────────────
 alter table public.content_embeddings enable row level security;
 
@@ -120,9 +114,8 @@ create policy content_embeddings_public_read on public.content_embeddings
   for select using (visibility = 'public');
 
 -- Authenticated members can additionally read embeddings whose visibility
--- matches their tier in the relevant community. We delegate the tier check
--- to the existing is_premium_in() / is_founder_in() helpers from migration
--- 0013_paid_subscriptions.sql. Two policies — Postgres OR's them together.
+-- matches their tier in the relevant community. Two policies — Postgres
+-- OR's them together.
 drop policy if exists content_embeddings_premium_read on public.content_embeddings;
 create policy content_embeddings_premium_read on public.content_embeddings
   for select to authenticated using (
@@ -137,7 +130,7 @@ create policy content_embeddings_premium_read on public.content_embeddings
 drop policy if exists content_embeddings_founder_read on public.content_embeddings;
 create policy content_embeddings_founder_read on public.content_embeddings
   for select to authenticated using (
-    visibility = 'founder' and exists (
+    visibility = 'founder-only' and exists (
       select 1 from public.fan_community_memberships m
       where m.fan_id = auth.uid()
         and m.community_id = content_embeddings.community_id
@@ -187,10 +180,10 @@ as $$
   where (p_community_id is null or e.community_id = p_community_id)
     and (p_source_table is null or e.source_table = p_source_table)
     and (
-      p_visibility = 'public' and e.visibility = 'public'
-      or p_visibility = 'premium' and e.visibility in ('public', 'premium')
-      or p_visibility = 'founder' and e.visibility in ('public', 'premium', 'founder')
-      or p_visibility = 'private'  -- admin-only path; RLS gates this
+      p_visibility = 'public'        and e.visibility = 'public'
+      or p_visibility = 'premium'     and e.visibility in ('public', 'premium')
+      or p_visibility = 'founder-only' and e.visibility in ('public', 'premium', 'founder-only')
+      or p_visibility = 'private'     -- admin-only path; RLS gates this
     )
   order by e.embedding <=> p_query
   limit p_limit;
@@ -202,7 +195,7 @@ grant execute on function public.search_embeddings to anon, authenticated;
 
 -- ─── 7. Helper function: list rows missing embeddings ─────────────────────
 -- The backfill cron uses this to find work to do. Returns rows from any of
--- the 6 indexed tables that don't yet have an entry in content_embeddings.
+-- the 5 indexed tables that don't yet have an entry in content_embeddings.
 create or replace function public.list_unembedded_rows(
   p_limit int default 100
 ) returns table (
@@ -214,29 +207,27 @@ language sql
 security definer       -- bypass RLS — backfill needs to see private rows too
 stable
 as $$
-  -- community_posts
-  select 'community_posts'::text, p.id, p.community_id
+  -- community_posts (visibility lives on the row; multi-tenant via artist_slug
+  -- which == community slug for music tenants from migration 0011)
+  select 'community_posts'::text, p.id, p.artist_slug
   from public.community_posts p
   left join public.content_embeddings e
     on e.source_table = 'community_posts' and e.source_id = p.id
   where e.id is null
   union all
 
-  -- post_comments
-  select 'post_comments'::text, c.id, p.community_id
-  from public.post_comments c
+  -- community_comments (parent post supplies community_id)
+  select 'community_comments'::text, c.id, p.artist_slug
+  from public.community_comments c
   join public.community_posts p on p.id = c.post_id
   left join public.content_embeddings e
-    on e.source_table = 'post_comments' and e.source_id = c.id
+    on e.source_table = 'community_comments' and e.source_id = c.id
   where e.id is null
   union all
 
-  -- communities (community_id is the slug itself; cast slug → uuid via md5
-  -- isn't right — use a sentinel uuid namespace. Simpler: just use the
-  -- communities row's own surrogate. We store the slug in community_id and
-  -- use a deterministic uuid derived from the slug as source_id.)
+  -- communities (slug-keyed; we derive a deterministic uuid from md5())
   select 'communities'::text,
-         (select md5('community:' || c.slug)::uuid),
+         (md5('community:' || c.slug))::uuid,
          c.slug
   from public.communities c
   left join public.content_embeddings e
@@ -244,8 +235,8 @@ as $$
   where e.id is null and c.active = true
   union all
 
-  -- artist_events
-  select 'artist_events'::text, ev.id, ev.community_id
+  -- artist_events (uses artist_slug, which doubles as community_id in FE)
+  select 'artist_events'::text, ev.id, ev.artist_slug
   from public.artist_events ev
   left join public.content_embeddings e
     on e.source_table = 'artist_events' and e.source_id = ev.id
@@ -257,15 +248,7 @@ as $$
   from public.rewards_catalog r
   left join public.content_embeddings e
     on e.source_table = 'rewards_catalog' and e.source_id = r.id
-  where e.id is null and r.active = true
-  union all
-
-  -- offers
-  select 'offers'::text, o.id, o.community_id
-  from public.offers o
-  left join public.content_embeddings e
-    on e.source_table = 'offers' and e.source_id = o.id
-  where e.id is null and o.active = true
+  where e.id is null and r.active = true and r.community_id is not null
 
   limit p_limit;
 $$;

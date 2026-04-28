@@ -6,7 +6,7 @@
  *
  *   1. How to assemble the embeddable text from the source row's columns
  *      (e.g. for community_posts: title + body; for communities: bio +
- *      tagline + genres).
+ *      tagline).
  *   2. How to derive the (community_id, visibility) tenant/access metadata
  *      that gets mirrored into the content_embeddings row.
  *   3. The content_embeddings.source_id format. For uuid-keyed tables it's
@@ -15,21 +15,30 @@
  *      formula as `list_unembedded_rows()` in migration 0024.
  *
  * Adding a new embeddable table = adding one entry to SOURCES below.
+ *
+ * NOTE on the music-platform schema:
+ *   * community_posts.visibility is ('public' | 'premium' | 'founder-only')
+ *   * artist_events keys by artist_slug, which equals communities.slug for
+ *     all 5 music tenants from migration 0011. We pass artist_slug as the
+ *     community_id when storing the embedding.
+ *   * The `offers` table has no community_id (it's global) so it's
+ *     intentionally NOT in this registry. Add later via a small schema
+ *     change.
  */
 
 import crypto from "node:crypto";
 
-/** What content_embeddings.source_table allows. Must match the SQL CHECK. */
+/** What content_embeddings.source_table allows. Must match the SQL CHECK
+ *  constraint in migration 0024. */
 export type SourceTable =
   | "community_posts"
-  | "post_comments"
+  | "community_comments"
   | "communities"
   | "artist_events"
-  | "rewards_catalog"
-  | "offers";
+  | "rewards_catalog";
 
 /** What content_embeddings.visibility allows. Must match the SQL CHECK. */
-export type Visibility = "public" | "premium" | "founder" | "private";
+export type Visibility = "public" | "premium" | "founder-only" | "private";
 
 /** Describes one source table for the embedding indexer. */
 export interface SourceDescriptor {
@@ -44,8 +53,7 @@ export interface SourceDescriptor {
   buildText(row: Record<string, unknown>): string;
   /**
    * Map a source row to the tenant + access metadata that gets stored on
-   * the content_embeddings row. For `communities`, community_id is just
-   * row.slug. For everything else, it's row.community_id.
+   * the content_embeddings row.
    */
   extractMeta(row: Record<string, unknown>): {
     community_id: string;
@@ -84,15 +92,14 @@ export function contentHash(text: string): string {
 }
 
 /**
- * Map a community_posts.visibility ('public' | 'premium') to the
- * content_embeddings.visibility space ('public' | 'premium' | 'founder'
- * | 'private'). For now identity for the values that exist; a 'pinned'
- * post is still 'public'.
+ * Map a community_posts.visibility ('public' | 'premium' | 'founder-only')
+ * to the content_embeddings.visibility space. Identity for the values that
+ * exist; falls back to 'public' for anything unrecognized.
  */
 function postVisibility(row: Record<string, unknown>): Visibility {
   const v = String(row.visibility ?? "public");
   if (v === "premium") return "premium";
-  if (v === "founder") return "founder";
+  if (v === "founder-only") return "founder-only";
   return "public";
 }
 
@@ -100,28 +107,29 @@ function postVisibility(row: Record<string, unknown>): Visibility {
 export const SOURCES: Record<SourceTable, SourceDescriptor> = {
   community_posts: {
     table: "community_posts",
-    columns: "id, community_id, title, body, visibility",
+    // Fan Engage's community_posts uses artist_slug (not community_id) for
+    // tenant scope. The slug values are the same — see migration 0011.
+    columns: "id, artist_slug, title, body, visibility",
     buildText: (row) =>
       [row.title, row.body]
         .filter((s): s is string => typeof s === "string" && s.length > 0)
         .join("\n\n"),
     extractMeta: (row) => ({
-      community_id: String(row.community_id),
+      community_id: String(row.artist_slug),
       visibility: postVisibility(row),
       source_id: String(row.id),
     }),
   },
 
-  post_comments: {
-    table: "post_comments",
-    // We need the parent post's community_id + visibility. Caller resolves
-    // these via a join (see indexRow in lib/embeddings/index-row.ts) and
-    // passes them in via row.community_id / row.visibility.
-    columns:
-      "id, post_id, body, community_id, visibility",
+  community_comments: {
+    table: "community_comments",
+    // community_comments has no visibility or community_id columns of its
+    // own — both are inherited from the parent post. The indexer joins
+    // through community_posts and provides them on the row passed in here.
+    columns: "id, post_id, body",
     buildText: (row) => String(row.body ?? ""),
     extractMeta: (row) => ({
-      community_id: String(row.community_id),
+      community_id: String(row.community_id ?? row.artist_slug),
       visibility: postVisibility(row),
       source_id: String(row.id),
     }),
@@ -129,16 +137,12 @@ export const SOURCES: Record<SourceTable, SourceDescriptor> = {
 
   communities: {
     table: "communities",
-    columns:
-      "slug, display_name, tagline, bio, genres, type",
+    columns: "slug, display_name, tagline, bio, type",
     buildText: (row) => {
       const parts: string[] = [];
       if (row.display_name) parts.push(String(row.display_name));
       if (row.tagline) parts.push(String(row.tagline));
       if (row.bio) parts.push(String(row.bio));
-      if (Array.isArray(row.genres) && row.genres.length > 0) {
-        parts.push(`Genres: ${row.genres.join(", ")}`);
-      }
       return parts.join("\n\n");
     },
     extractMeta: (row) => ({
@@ -150,67 +154,57 @@ export const SOURCES: Record<SourceTable, SourceDescriptor> = {
 
   artist_events: {
     table: "artist_events",
-    columns:
-      "id, community_id, title, detail, location, tier",
+    // Fan Engage's artist_events is the music-era schema: artist_slug,
+    // title, detail, event_date (free-form text), url. No location or
+    // tier columns in this version — events are public to all members.
+    columns: "id, artist_slug, title, detail, event_date",
     buildText: (row) => {
       const parts: string[] = [];
       if (row.title) parts.push(String(row.title));
-      if (row.location) parts.push(`Location: ${row.location}`);
+      if (row.event_date) parts.push(`Date: ${row.event_date}`);
       if (row.detail) parts.push(String(row.detail));
       return parts.join("\n\n");
     },
     extractMeta: (row) => ({
-      community_id: String(row.community_id),
-      visibility:
-        row.tier === "premium"
-          ? "premium"
-          : row.tier === "founder-only"
-            ? "founder"
-            : "public",
+      community_id: String(row.artist_slug),
+      visibility: "public",
       source_id: String(row.id),
     }),
   },
 
   rewards_catalog: {
     table: "rewards_catalog",
-    columns: "id, community_id, name, description",
-    buildText: (row) => {
-      const parts: string[] = [];
-      if (row.name) parts.push(String(row.name));
-      if (row.description) parts.push(String(row.description));
-      return parts.join("\n\n");
-    },
-    extractMeta: (row) => ({
-      community_id: String(row.community_id),
-      visibility: "public",
-      source_id: String(row.id),
-    }),
-  },
-
-  offers: {
-    table: "offers",
-    columns: "id, community_id, title, description, category",
+    columns: "id, community_id, title, description, requires_tier",
     buildText: (row) => {
       const parts: string[] = [];
       if (row.title) parts.push(String(row.title));
-      if (row.category) parts.push(`Category: ${row.category}`);
       if (row.description) parts.push(String(row.description));
       return parts.join("\n\n");
     },
-    extractMeta: (row) => ({
-      community_id: String(row.community_id),
-      visibility: "public",
-      source_id: String(row.id),
-    }),
+    extractMeta: (row) => {
+      // requires_tier maps onto our visibility space:
+      //   null            → 'public' (any member can see + redeem)
+      //   'premium'       → 'premium'
+      //   'founder-only'  → 'founder-only'
+      const tier = row.requires_tier as string | null;
+      const visibility: Visibility =
+        tier === "premium" ? "premium"
+        : tier === "founder-only" ? "founder-only"
+        : "public";
+      return {
+        community_id: String(row.community_id),
+        visibility,
+        source_id: String(row.id),
+      };
+    },
   },
 };
 
 /** All source tables in deterministic order — used by the backfill cron. */
 export const SOURCE_TABLES: SourceTable[] = [
   "community_posts",
-  "post_comments",
+  "community_comments",
   "communities",
   "artist_events",
   "rewards_catalog",
-  "offers",
 ];

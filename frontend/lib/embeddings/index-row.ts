@@ -3,7 +3,8 @@
  *
  * This is the entry point used by:
  *   * Inline indexing — server actions on post create / update call
- *     `indexRow(...)` in fire-and-forget mode after the row is committed.
+ *     `indexRowAsync(...)` in fire-and-forget mode after the row is
+ *     committed.
  *   * Backfill cron — finds rows without an embedding and indexes them.
  *
  * The function is idempotent: if a row's content hasn't changed, the
@@ -28,6 +29,10 @@ export type IndexResult =
 
 /**
  * Embed a single source row and write/upsert it into content_embeddings.
+ *
+ * For uuid-keyed tables, `rowId` is the row's id (uuid).
+ * For `communities` (slug-keyed), `rowId` is the slug — we derive a stable
+ * uuid from md5('community:' || slug) for the source_id column.
  */
 export async function indexRow(
   table: SourceTable,
@@ -41,33 +46,39 @@ export async function indexRow(
   try {
     const admin = createAdminClient();
 
-    // 1. Fetch the source row + (for post_comments) the parent post's
-    //    community_id + visibility, which the comment doesn't carry on its
-    //    own row.
+    // 1. Fetch the source row. community_comments needs a parent-post join
+    //    to inherit community_id + visibility; communities is slug-keyed;
+    //    everything else is straightforward uuid lookup.
     let row: Record<string, unknown> | null = null;
 
-    if (table === "post_comments") {
+    if (table === "community_comments") {
       const { data, error } = await admin
-        .from("post_comments")
-        .select("id, post_id, body, community_posts!inner(community_id, visibility)")
+        .from("community_comments")
+        .select(
+          "id, post_id, body, community_posts!inner(artist_slug, visibility)",
+        )
         .eq("id", rowId)
         .maybeSingle();
       if (error) return { status: "error", error: error.message };
       if (!data) return { status: "skipped_no_row" };
 
-      // Flatten the nested join so descriptor.extractMeta sees community_id
-      // and visibility at the top level.
-      const post = (data as unknown as { community_posts: { community_id: string; visibility: string } }).community_posts;
+      const post = (
+        data as unknown as {
+          community_posts: { artist_slug: string; visibility: string };
+        }
+      ).community_posts;
       row = {
         id: data.id,
         post_id: data.post_id,
         body: data.body,
-        community_id: post?.community_id,
+        // Hand the inherited tenant + visibility to extractMeta in the
+        // shape it expects.
+        artist_slug: post?.artist_slug,
+        community_id: post?.artist_slug,
         visibility: post?.visibility,
       };
     } else if (table === "communities") {
-      // communities is keyed by slug, but indexRow accepts a "rowId" which
-      // for this table IS the slug.
+      // Slug-keyed.
       const { data, error } = await admin
         .from("communities")
         .select(descriptor.columns)
@@ -147,7 +158,7 @@ export async function indexRow(
 /**
  * Fire-and-forget version for use inside server actions on post create.
  *
- *   import { indexRowAsync } from "@/lib/embeddings/index-row";
+ *   import { indexRowAsync } from "@/lib/embeddings";
  *   ...
  *   indexRowAsync("community_posts", newPost.id);  // no await
  *
