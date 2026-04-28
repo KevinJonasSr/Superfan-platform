@@ -745,6 +745,135 @@ fuzzy city-string match to be the bottleneck.
 
 ---
 
+## 🎁 AI feature metrics — reward recommendations (Phase 10)
+
+The hero card on /artists/[slug]/rewards. These queries validate
+the recommendation makes sense before fans see it.
+
+### Embedding coverage (must be non-zero before recs work)
+
+```sql
+select count(*) as embedded_rewards
+from public.content_embeddings
+where source_table = 'rewards_catalog';
+```
+
+If this is 0, no recommendations will fire (RPC returns 0 rows for
+everyone, cold-start fires). Check the embeddings backfill cron.
+
+### Per-fan dry-run (sanity check)
+
+Pick a fan who has at least one past redemption:
+
+```sql
+-- Replace <fan_id> + <community_id> with real values.
+select * from public.recommend_rewards_for_fan(
+  '<fan_id>'::uuid, '<community_id>', 5
+);
+```
+
+Returns top-5 candidates by affinity score. Spot-check the rank
+order against your intuition. If a clearly-irrelevant reward sits
+at #1 (e.g., a 'merch_discount' for a fan who only ever redeems
+'experience' kinds), the embedding text needs more context — bump
+the rewards_catalog text in the embedding pipeline to include
+`kind` so it influences the vector.
+
+### Affinity vs cold-start mix (post-launch insight)
+
+After the rec card has been live for a couple weeks:
+
+```sql
+-- We don't log impressions today, but Vercel route logs +
+-- a future click-through table will let us answer:
+--   - What fraction of /rewards page renders showed an affinity
+--     pick vs a cold-start pick?
+--   - Did fans click affinity recs at higher rates?
+-- For now, this query approximates 'how many fans even have any
+-- redemption history that the affinity path could engage with':
+select
+  count(*) filter (where redeemed >= 1) as has_history,
+  count(*) filter (where redeemed = 0)  as cold_start,
+  count(*)                              as total
+from (
+  select f.id, count(rr.id) as redeemed
+  from public.fans f
+  left join public.reward_redemptions rr
+    on rr.fan_id = f.id
+   and rr.status in ('pending','fulfilled')
+  group by f.id
+) sub;
+```
+
+Healthy ratio depends on platform maturity. Day 1: nearly all fans
+will be cold-start (expected). Month 3+: should trend toward 50/50.
+
+### Smoke test (run when there's enough history to be meaningful)
+
+Don't bother running this until:
+  - At least 3 active rewards in rewards_catalog for the test community
+  - At least 1 fan has redeemed something (so the affinity path can
+    actually fire)
+  - Embedding coverage query above is non-zero
+
+When ready, run through:
+
+1. **Hero card visible** — Sign in as a fan with ≥1 past redemption,
+   visit /artists/<slug>/rewards. Hero card renders at top with the
+   "✨ For you" chip.
+2. **Affinity reason** — Caption reads "Based on the N rewards
+   you've redeemed." (N = your past-redemption count, capped at 20).
+3. **Cold start — popular** — Sign in as a brand-new fan with zero
+   redemptions but on a community where someone redeemed something
+   in the last 30 days. Caption reads "Popular with fans this month
+   and within your points."
+4. **Cold start — cheapest** — Sign in as a brand-new fan in a
+   community with zero redemptions ever. Caption reads "An easy
+   first redemption."
+5. **Affordability filter** — Set a fan's total_points to 100 in
+   the database. Reload /rewards. The recommendation must have
+   point_cost ≤ 100. If it doesn't, the SQL filter is broken.
+6. **Tier filter** — Make a reward with requires_tier='premium'.
+   Sign in as a free fan (subscription_tier='free'). Reload. The
+   premium-only reward must NOT be the recommendation.
+7. **Recency filter** — Have a fan redeem reward X. Within 30 days,
+   reload /rewards. Reward X must NOT be the recommendation
+   (someone else gets it OR a different reward wins).
+8. **Hide behavior** — Click Hide on the hero card. URL gains
+   ?dismiss_rec=1. Card is gone. Reload without the param — card
+   returns. (Per-page-view dismiss only; not session-persistent
+   by design.)
+9. **No eligible rewards** — In a community with 0 active rewards,
+   the page renders without the hero card AND without crashing.
+10. **RPC down** — Simulate by temporarily renaming the function in
+    Supabase ('alter function recommend_rewards_for_fan rename to
+    _broken'). Reload /rewards. Page should fall back to cold-start
+    silently and still render.
+
+After all 10 pass, recommendations are launch-ready.
+
+### Phase 10.5 — marketplace integration (post-launch)
+
+`/marketplace` reads from `offers` (NOT `rewards_catalog`). Today
+the embedding pipeline doesn't touch offers. To extend:
+
+```
+1. Add 'offers' to lib/embeddings/sources.ts:SOURCES.
+2. Add an offers branch to indexRow() so create/update flows embed.
+3. Add offers to list_unembedded_rows() in migration 0024 (or a
+   small migration 0030.5).
+4. Either (a) generalize recommend_rewards_for_fan to take a
+   p_source_table arg, or (b) write a sibling
+   recommend_offers_for_fan with the same shape.
+5. Surface a hero card on app/marketplace/page.tsx using the same
+   RecommendedRewardCard pattern.
+```
+
+Worth it when marketplace traffic grows or when the offers catalog
+exceeds ~10 rows per community.
+
+---
+
 ---
 
 ## ✅ Done

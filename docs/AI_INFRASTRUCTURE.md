@@ -1247,3 +1247,98 @@ In `lib/event-matching/score.ts`:
   SMS body. Should not ship until we have an A/B baseline.
 - **Push notifications** — third channel alongside in-app + SMS.
   Requires PWA push setup.
+
+---
+
+## Phase 10 — Reward recommendations
+
+Surface a single hero card at the top of `/artists/[slug]/rewards`
+matching the recs doc's #10 ("Based on your tier, your points, and
+what fans like you redeemed, you'd love this"). Score 3.0 — the
+highest-rated rec in the doc — with effort 1.
+
+### Algorithm
+
+1. **Affinity path** — `recommend_rewards_for_fan()` Postgres function
+   sums (1 - cosine_distance) between every past-redeemed reward
+   embedding and every candidate reward embedding. Highest sum wins.
+2. **Filters in SQL** — community match, active=true, point_cost ≤
+   fan.total_points, tier eligibility via `is_premium()` /
+   `is_founder()` helpers, no redemption of that reward in the last
+   30 days.
+3. **Cold start** — fan with zero past redemptions returns 0 RPC
+   rows. The TS wrapper falls back to:
+   - Most-redeemed eligible reward in the last 30 days
+     (`reason='cold_start_popular'`), OR
+   - Cheapest eligible reward if the platform is truly cold
+     (`reason='cold_start_cheapest'`).
+
+Zero AI cost: pure pgvector arithmetic against existing reward
+embeddings (Phase 1). One RPC + a couple of small SELECTs per page
+view.
+
+### Files
+
+- `supabase/migrations/0030_reward_recs.sql` — the RPC.
+- `lib/recs/rewards.ts` — TS wrapper + cold-start fallback.
+- `lib/recs/index.ts` — barrel.
+- `app/artists/[slug]/rewards/recommended-reward-card.tsx` — hero card.
+- `app/artists/[slug]/rewards/page.tsx` — wires the rec into the
+  parallel data load + renders the card before the catalog grid.
+
+### Why this scope (and what's deferred)
+
+The recs doc names two surfaces — `/rewards` and `/marketplace`.
+Mapping them to actual code:
+
+- `/artists/[slug]/rewards` uses `rewards_catalog` — already embedded
+  in Phase 1. Shipped.
+- `/marketplace` uses a separate `offers` table — NOT in the embedding
+  pipeline. Deferred to Phase 10.5: extend the embedding indexer to
+  cover offers, then add an analogous hero card. ~1 day of work
+  whenever marketplace traffic grows enough to matter.
+
+The recs doc's per-fan logic is the same on both sides. The work
+ahead of 10.5 is purely plumbing.
+
+### Tunables
+
+In `0030_reward_recs.sql`:
+
+- `limit 20` on `past_redemptions` — caps the fan's history we score
+  against. Bump if power users redeem heavily and the recommendation
+  feels stale; lower if the cross-join gets slow.
+- `30 days` recency penalty — adjust if reward catalog turnover is
+  slower (e.g., merch drops every 6 months → bump to 90 days).
+
+In `lib/recs/rewards.ts`:
+
+- Cold-start window (`30 days` for popularity ranking) — same logic.
+
+### Failure modes
+
+- **RPC error** — logged and treated as cold-start; the page still
+  loads.
+- **No eligible rewards** — `recommendReward()` returns null and the
+  hero card just doesn't render. Static catalog below is unchanged.
+- **Reward embedding missing** — Phase 1 backfill cron should keep
+  this near zero. If a freshly-created reward hasn't been embedded
+  yet, it just won't show up as a candidate until the next 15-min
+  cron tick.
+
+### Future (V2)
+
+- **Reaction-based cold start** — for fans with reactions but no
+  redemptions, use the centroid of post embeddings they've reacted
+  to as the affinity vector. Expected meaningful for casual fans
+  who haven't redeemed yet but are clearly engaged.
+- **Marketplace integration (Phase 10.5)** — extend Phase 1 to embed
+  `offers`, then plug the same hero-card pattern into
+  `app/marketplace/page.tsx`. Cross-community since marketplace is
+  platform-wide; ranking should weight the fan's home community
+  rewards above unrelated offers.
+- **Multi-rec carousel** — instead of one hero, show top-3. Worth it
+  once the catalog has 20+ active rewards per community, otherwise
+  the carousel feels redundant.
+- **Click-through telemetry** — log when a fan clicks "View reward"
+  vs "Hide" so we can A/B different score weightings.
