@@ -461,3 +461,157 @@ where moderation_prompt_version != 'v2';  -- new version
   raises `ModerationError`. We never silently default to "safe".
 
 All recoverable; nothing requires code changes.
+
+---
+
+# Phase 3 — AI-drafted comment replies (recommendation #3)
+
+The drafter shipped in Phase 3 adds a "✨ Draft a reply" button to every
+comment composer. Clicking it returns 3 short reply options (each ≤ 25
+words) tuned to the post, the user's prior comment style, and the
+community's vibe. Picking one fills the textarea — still editable.
+Posting persists `draft_used = true` so we can A/B test the engagement
+lift.
+
+## What's wired up
+
+### Database
+
+`supabase/migrations/0026_draft_used.sql` adds:
+
+- `community_comments.draft_used boolean default false`
+- A partial index on `(created_at desc) where draft_used = true` for
+  cheap "how many drafted comments did we get last week" queries.
+
+### Application
+
+`frontend/lib/drafts/`:
+
+- `client.ts` — `generateCommentDrafts(input)` wraps Claude Haiku 4.5
+  with a strict, versioned prompt (`DRAFT_PROMPT_VERSION = 'v1'`).
+  Returns exactly 3 distinct drafts, ≤ 25 words each. `temperature: 0.7`
+  for variety. Defensive JSON parser strips fence wrapping and
+  validates the shape.
+- `draft-comment.ts` — `draftComment({postId, userId})` is the
+  server-side workhorse. Loads the post + community + last 10 prior
+  comments by the same user (for style transfer) and calls the
+  classifier. Has a `draftCommentWithoutJoin` fallback for when the
+  multi-table `.select(...)` shape doesn't match supabase-js's type
+  inference.
+- `index.ts` — barrel.
+
+`frontend/app/api/ai/draft-comment/route.ts`:
+
+- POST `{ postId }` → `{ drafts: [...3 strings] }`.
+- Auth-gated (401 if not signed in). `userId` comes from the session,
+  not the body.
+- Returns 503 if `ANTHROPIC_API_KEY` is missing.
+- No-cache headers — every click is fresh.
+
+### Client UI
+
+`frontend/app/artists/[slug]/community/comment-composer.tsx`:
+
+- "use client" component that owns drafter state.
+- ✨ button → POST → loading state → 3 clickable chips render in a
+  panel above the textarea.
+- Click a chip → textarea fills, `draft_used` flips to `'1'`. Still
+  editable.
+- Click ✨ again → regenerate (no caching).
+- Submit button uses `useFormStatus()` to disable during the pending
+  server action.
+- After submit, all state resets.
+
+`frontend/app/artists/[slug]/community/post-card.tsx`:
+
+- The inline `<form action={addCommentAction}>` is replaced with
+  `<CommentComposer postId artistSlug />`.
+
+`frontend/app/artists/[slug]/community/actions.ts` (`addCommentAction`):
+
+- Reads the new `draft_used` hidden input and persists it on the row.
+
+## Setup steps for Phase 3
+
+Only one new step (the API key + redeploy from Phase 2 already covered
+the runtime needs):
+
+### Run migration 0026 in Supabase
+
+Open https://supabase.com/dashboard/project/uhovonrljcauaoctypbg/sql/new
+and paste the contents of `supabase/migrations/0026_draft_used.sql`.
+
+That's it. No new env var required (uses the existing
+`ANTHROPIC_API_KEY` that Phase 2 needed). No redeploy strictly required
+either — but a fresh deploy makes the new endpoint + composer visible
+right away.
+
+## Verifying it works
+
+1. Sign in as a fan.
+2. Visit any artist's community feed (`/artists/raelynn/community`).
+3. Scroll to a post with comments visible. Click `✨` next to the
+   textarea.
+4. Within 1-2 seconds, 3 reply drafts appear in chip form.
+5. Click one → textarea fills.
+6. Edit if you like, click `Post`.
+7. The new comment row in `community_comments` has `draft_used = true`.
+
+Spot-check via SQL:
+
+```sql
+select id, body, draft_used, created_at
+from public.community_comments
+order by created_at desc
+limit 5;
+```
+
+## A/B analysis (once you have data)
+
+The success criterion in `FAN_ENGAGE_AI_RECOMMENDATIONS.md` is a +30%
+comment volume lift on posts where the drafter is shown. Once a couple
+weeks of usage have accumulated:
+
+```sql
+-- Comment volume by drafter usage
+select draft_used, count(*) as comments,
+       avg(length(body)) as avg_chars
+from public.community_comments
+where created_at > now() - interval '14 days'
+group by 1;
+
+-- Drafter conversion rate (proxy: % of comments that originated as drafts)
+select 100.0 * count(*) filter (where draft_used) / nullif(count(*), 0) as drafter_share_pct
+from public.community_comments
+where created_at > now() - interval '14 days';
+```
+
+If `drafter_share_pct` is below ~10% the button isn't getting used
+(consider making it more prominent). Above ~40% means people love it
+(consider ranking drafts better, adding a "regenerate" sub-button per
+chip, etc.).
+
+## Operational notes
+
+### Costs
+
+Claude Haiku 4.5 at $0.25/M input + $1.25/M output. Per click:
+~250 input + ~200 output tokens = ~$0.0003. 10k clicks/month = $3.
+Trivial.
+
+### Failure modes
+
+- **`ANTHROPIC_API_KEY` missing** — endpoint returns 503; UI shows
+  inline error in rose-300 text. User can still write organically.
+- **Anthropic 429 / 5xx** — `DraftError` raised; same UI behavior. No
+  retry today; if rate limits become a problem, add a 1s exponential
+  backoff in the route.
+- **Classifier returns malformed JSON** — strict parser rejects it,
+  same inline error. We never serve bogus drafts.
+
+### Why no rate limiting yet
+
+V1 trusts Anthropic's tier-1 rate limit (50 RPM, plenty for our user
+base). If we see abuse (one user spamming the ✨ button), add a small
+Redis-backed limiter at the route. Until then it's premature
+optimization.
