@@ -18,6 +18,7 @@ const adminNav = [
   { href: "/admin/fans", label: "Fans" },
   { href: "/admin/policies", label: "Policies" },
   { href: "/admin/moderation", label: "Moderation" },
+  { href: "/admin/briefs", label: "Briefs" },
 ];
 
 export default async function AdminLayout({
