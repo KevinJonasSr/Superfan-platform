@@ -212,6 +212,53 @@ import ModerationButton from "@/app/admin/community/moderation-button";
 - [ ] **Fan Home Recent Activity expansion** — the data layer (`frontend/lib/data/fan-home.ts`) already pulls the 5 most recent community posts from followed artists, but the dashboard (`frontend/components/fan-home-dashboard.tsx` `<RecentActivityFeed>`) only renders the top 3. Two related upgrades worth picking up post-launch: (1) bump the visible count to 5 — trivial change to `posts.slice(0, 3)` — and/or raise the data layer's `.limit(8)` if we want a deeper feed; (2) add a "View all activity →" link at the bottom of the card that routes to a new per-fan activity index page (e.g. `/activity` or `/feed`) showing every recent post across followed artists, paginated, with body bodies and reactions. The index page would basically be a cross-artist version of `/artists/[slug]/community`. Estimated work: ~2 hours for the link + index page; ~5 minutes for the count bump on its own.
 - [ ] **Platform-wide badges architecture** — migration 0023 (`0023_fix_award_badge_delegate.sql`) shipped a tactical fix for the signup 42P10 by having `award_badge(uuid, text)` delegate to `award_community_badge(uuid, text, text)` with a hard-coded `community_id = 'raelynn'`. This works because every historical `fan_badges` row is already scoped to `'raelynn'` (the table's column default), but it's architecturally wrong: badges like `welcome`, `tier-bronze`, `recruiter`, `first-post`, `first-comment`, etc. are platform-wide achievements, not RaeLynn-specific ones. Two clean ways to fix it post-launch: (a) add a `'platform'` (or `'*'`) row to the `communities` table and use that as the default for non-scoped badges — minimal schema change, ~30 minutes including a backfill `update fan_badges set community_id = 'platform' where badge_slug in (...)`; or (b) split into separate `platform_badges` (one row per fan per badge) + `community_badges` (one row per fan per badge per community) tables — more correct data model but requires a migration that re-shards existing rows + updates every read path. Either way, also worth adding a `badges.scope` column with values `'platform' | 'community'` so the data layer can route awards to the right table/community without hard-coded slug lists. Tracker for the delegation hack: see migration 0023 header comment.
 
+## 🤖 AI roadmap pause gate
+
+After Phase 4 (weekly digest emails), Fan Engage has four shipped AI
+features in flight: embedding pipeline (#1), moderation classifier
+(#2), drafter (#3), digest emails (#4). Before adding more AI surface
+area (Phase 5+ — auto-tagging posts, semantic search, reward
+recommendations, smart reminders, etc.), wait until the shipped
+features have ~2 weeks of real engagement data and validate the
+hypotheses on each:
+
+- [ ] **Drafter (#3)** — does it actually lift comment volume on
+      posts where the ✨ button is shown? Target from the recs doc:
+      +30% comment volume. Run the queries in the "📈 AI feature
+      metrics — drafter A/B (Phase 3)" section below. If lift is
+      <10%, fix the drafter (better prompt, more prominent button,
+      regen sub-buttons) before shipping more AI features.
+- [ ] **Digest (#4)** — does it actually move retention? Track
+      Mailchimp open rate (target: >25%), click-through (target:
+      >5%), 7-day return-to-app rate among recipients (target:
+      +15% vs. non-recipients). If the digest doesn't lift any of
+      these, the rec doc's claim that "personalized weekly briefing
+      is the highest-leverage email" was wrong for this audience —
+      pause the cron and rethink before shipping #5+.
+- [ ] **Moderation (#2)** — does the classifier under-flag (toxic
+      content reaches the community) or over-flag (admins drown in
+      false positives)? Audit `/admin/moderation` once a week:
+      review every `flag_review` decision, override the wrong
+      ones. The override rate IS the eval signal — bump
+      `PROMPT_VERSION` in `frontend/lib/moderation/client.ts` if
+      override rate >25%.
+- [ ] **Embeddings (#1)** — passive infrastructure; nothing to
+      validate until a downstream feature (search, recs) reads it.
+      Just check `select count(*) from public.content_embeddings`
+      keeps growing with new posts.
+
+The AI recs doc has 16 more features queued (#5–#20). Don't ship
+any of them until the data above looks healthy. The cost of
+shipping more half-validated features is feature dilution +
+moderation overhead + AI bill creep, none of which are worth it
+without proof the pattern works.
+
+Tracker file: `FAN_ENGAGE_AI_RECOMMENDATIONS.md` (full roadmap).
+Operational docs: `docs/AI_INFRASTRUCTURE.md` (per-phase setup,
+costs, failure modes).
+
+---
+
 ## 📈 AI feature metrics — drafter A/B (Phase 3)
 
 Use these queries after the comment drafter has been live for a few
