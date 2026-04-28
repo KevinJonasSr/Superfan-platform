@@ -403,16 +403,49 @@ function BadgesInProgressPanel({ items }: { items: FanHomeData["badgesInProgress
   return (
     <div className="glass-card rounded-2xl p-5">
       <p className="text-xs uppercase tracking-wide text-white/60">Badges in progress</p>
-      <div className="mt-4 flex flex-wrap gap-2">
-        {items.length > 0 ? items.slice(0, 4).map((badge) => (
-          <div
-            key={badge.slug}
-            className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-[10px]"
-          >
-            {badge.icon} {badge.name}
-          </div>
-        )) : null}
-      </div>
+      {items.length > 0 ? (
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {items.slice(0, 6).map((badge) => {
+            const pct =
+              badge.threshold > 0
+                ? Math.min(
+                    100,
+                    Math.round((badge.progress / badge.threshold) * 100),
+                  )
+                : 0;
+            return (
+              <div
+                key={badge.slug}
+                className="flex flex-col items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-4 text-center transition hover:border-white/25 hover:bg-white/10"
+              >
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-aurora/30 to-ember/30 text-3xl">
+                  {badge.icon ?? "🏅"}
+                </span>
+                <span className="text-sm font-semibold leading-tight">
+                  {badge.name}
+                </span>
+                {badge.threshold > 0 && (
+                  <>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-aurora to-ember"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] uppercase tracking-wide text-white/50">
+                      {badge.progress}/{badge.threshold}
+                    </span>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-white/50">
+          Keep engaging — new badges will appear here as you make progress.
+        </p>
+      )}
     </div>
   );
 }

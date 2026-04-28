@@ -101,9 +101,11 @@ export default async function Home({
   // Featured offers: DB only — no more fallback/lie content now that this
   // branch is signed-in-only.
   const offers = featured.map((o) => ({
+    slug: o.slug,
     title: o.title,
     tier: `${o.min_tier[0].toUpperCase() + o.min_tier.slice(1)}`,
     points: o.price_points ? formatPts(o.price_points) : `$${(o.price_cents ?? 0) / 100}`,
+    imageUrl: o.image_url,
   }));
 
   // Tier journey card — use real tier + fan's current status if available.
@@ -209,21 +211,40 @@ export default async function Home({
                 </div>
               ) : (
                 offers.map((offer) => (
-                  <div key={offer.title} className="rounded-2xl bg-black/30 p-4">
-                    <p className="text-sm font-semibold">{offer.title}</p>
-                    <p className="text-xs uppercase tracking-wide text-white/50">{offer.tier}</p>
-                    <div className="mt-4 flex items-center justify-between">
-                      <span className="text-lg font-semibold text-emerald-300">
-                        {offer.points}
-                      </span>
-                      <Link
-                        href="/marketplace"
-                        className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium"
-                      >
-                        View
-                      </Link>
+                  <Link
+                    key={offer.slug ?? offer.title}
+                    href="/marketplace"
+                    className="group block overflow-hidden rounded-2xl bg-black/30 transition hover:bg-black/40"
+                  >
+                    {offer.imageUrl ? (
+                      <div className="aspect-[16/9] w-full overflow-hidden bg-black/60">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={offer.imageUrl}
+                          alt=""
+                          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex aspect-[16/9] w-full items-center justify-center bg-gradient-to-br from-amber-500/20 via-aurora/10 to-ember/20 text-5xl">
+                        🎁
+                      </div>
+                    )}
+                    <div className="p-5">
+                      <p className="text-base font-semibold">{offer.title}</p>
+                      <p className="mt-1 text-xs uppercase tracking-wide text-white/50">
+                        {offer.tier}
+                      </p>
+                      <div className="mt-4 flex items-center justify-between">
+                        <span className="text-xl font-bold text-emerald-300">
+                          {offer.points}
+                        </span>
+                        <span className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium transition group-hover:bg-white/20">
+                          View →
+                        </span>
+                      </div>
                     </div>
-                  </div>
+                  </Link>
                 ))
               )}
             </div>
@@ -257,7 +278,7 @@ export default async function Home({
                   )} to ${kpis.next_tier.display_name}`
                 : "Your tier at a glance"}
             </h3>
-            <div className="mt-6 space-y-4">
+            <div className="mt-6 space-y-3">
               {tiers.map((tier) => {
                 const unlocked =
                   kpis != null && kpis.total_points >= tier.min_points;
@@ -265,15 +286,19 @@ export default async function Home({
                 return (
                   <div
                     key={tier.slug}
-                    className={`flex items-center justify-between rounded-2xl px-4 py-3 ${
-                      isCurrent ? "bg-white/15" : "bg-black/30"
+                    className={`flex items-center justify-between rounded-2xl px-5 py-4 ${
+                      isCurrent
+                        ? "bg-white/15 ring-1 ring-white/25"
+                        : "bg-black/30"
                     }`}
                   >
-                    <span className="flex items-center gap-2 text-sm font-medium">
-                      <span>{tierIcon(tier.slug)}</span>
+                    <span className="flex items-center gap-3 text-base font-semibold">
+                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-2xl">
+                        {tierIcon(tier.slug)}
+                      </span>
                       {tier.display_name}
                     </span>
-                    <span className="text-xs uppercase tracking-wide text-white/50">
+                    <span className="text-sm uppercase tracking-wide text-white/60">
                       {unlocked ? "Unlocked" : `${formatPts(tier.min_points)}`}
                     </span>
                   </div>
