@@ -546,6 +546,56 @@ If the OpenAI bill spikes:
      The endpoint is unauth'd by design; if abuse becomes real we'll
      add IP-based rate limits.
 
+### Smoke test (run when there's enough content to be meaningful)
+
+Don't bother running this until the platform has at least:
+  - 3+ active artist communities
+  - ~50+ posts spread across them
+  - ~20+ comments
+  - ~5+ active rewards in the catalog
+  - ~10+ upcoming events
+
+Below that threshold, search results will look thin no matter how
+well the pipeline works — there just isn't enough content to find.
+
+When ready, run through:
+
+1. **Header bar visible (desktop, lg+ breakpoint)** — Hard-refresh
+   `/`. Search bar should sit between the nav and the avatar/sign-in.
+2. **Header bar hidden (mobile, < lg breakpoint)** — Search bar
+   should NOT show. Open the user menu (signed-in only) and confirm
+   the `Search` link is present under `My rewards`.
+3. **Direct query** — Visit `/search?q=tour` (or whatever your active
+   artists post about). Confirm results are grouped by Communities,
+   Posts, Comments, Events, Rewards, and that each result links back
+   to its source page.
+4. **Synonym test** — Search for a term that doesn't appear verbatim
+   in any post but is conceptually related (e.g. "concert" when posts
+   say "show", or "merch" when posts say "tee"). Confirm relevant
+   results still come back. If they don't, semantic similarity is
+   broken upstream — check that posts have rows in
+   `content_embeddings`.
+5. **Empty state** — Search for `aardvark surfing`. Should show the
+   "no matches" friendly state, not a crash.
+6. **Short-query gate** — Search for `a`. Should show the prompt page
+   without burning an OpenAI call (check Vercel runtime logs to
+   confirm no `embedText` call fired).
+7. **Auto-hide leakage** — Pick a moderated `auto_hide` post (find
+   one in `community_posts where moderation_status = 'auto_hide'`).
+   Confirm a search for its body doesn't surface it. (If it does,
+   the source-row filter in `lib/search/query.ts` regressed.)
+8. **Visibility leakage** — As a signed-out user, confirm
+   `premium` and `founder-only` content is not in results. (Search
+   the title of a known premium-only post.)
+9. **Performance** — Bottom of the results page shows a duration in
+   ms. Should be < 800ms in production. If above 1500ms consistently,
+   investigate Supabase RPC latency or `RAW_LIMIT` size.
+10. **Cron sanity** — Run the `select source_table, count(*) ...`
+    query above and confirm every source_table has rows. If any is
+    zero, search is silently missing that surface.
+
+After all 10 pass, search is launch-ready.
+
 ---
 
 ---
