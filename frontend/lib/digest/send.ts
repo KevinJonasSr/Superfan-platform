@@ -2,11 +2,11 @@
  * Mailchimp delivery for the weekly digest.
  *
  * Pattern: per-fan personalization via merge fields.
- *   1. For each fan, PUT their merge fields (DIGEST_BLOCK = rendered
- *      HTML, DIGEST_TEXT = plain-text, plus any helper fields).
+ *   1. For each fan, PUT their merge fields (DIGESTHTML = rendered
+ *      HTML, DIGESTTEXT = plain-text, plus any helper fields).
  *      Mailchimp dedupes via the subscriber_hash so this is upsert.
  *   2. After all fans are updated, POST a single campaign with a
- *      template that templates *|DIGEST_BLOCK|*. Send to a SAVED
+ *      template that templates *|DIGESTHTML|*. Send to a SAVED
  *      SEGMENT (or ALL) — Mailchimp injects each recipient's merge
  *      values at send time.
  *
@@ -15,7 +15,7 @@
  * field-with-HTML-block pattern works for V1 volume (a few hundred
  * fans) and avoids adding a new vendor.
  *
- * The Mailchimp audience needs DIGEST_BLOCK and DIGEST_TEXT custom
+ * The Mailchimp audience needs DIGESTHTML and DIGESTTEXT custom
  * merge fields configured in advance — see docs/AI_INFRASTRUCTURE.md
  * Phase 4 setup.
  */
@@ -34,7 +34,7 @@ const MAILCHIMP_SERVER = () => process.env.MAILCHIMP_SERVER_PREFIX;
 const MAILCHIMP_LIST = () => process.env.MAILCHIMP_AUDIENCE_ID;
 
 /** Subject line for the campaign. Personalization happens via the
- *  template body via *|FNAME|* and *|DIGEST_BLOCK|* merge tags. */
+ *  template body via *|FNAME|* and *|DIGESTHTML|* merge tags. */
 const CAMPAIGN_SUBJECT = "Your weekly Fan Engage roundup";
 const CAMPAIGN_FROM_NAME = "Fan Engage";
 const CAMPAIGN_REPLY_TO = "no-reply@fanengage.app";
@@ -109,8 +109,8 @@ export async function prepareDigestForFan(
         status_if_new: "subscribed",
         merge_fields: {
           ...(recipient.first_name ? { FNAME: recipient.first_name } : {}),
-          DIGEST_BLOCK: html,
-          DIGEST_TEXT: text,
+          DIGESTHTML: html,
+          DIGESTTEXT: text,
         },
       }),
     });
@@ -175,7 +175,7 @@ export async function fireDigestCampaign(
 
   // 1. Create campaign targeting the whole audience. Mailchimp will only
   //    actually deliver to fans whose status is 'subscribed' AND whose
-  //    DIGEST_BLOCK merge field is non-empty for this run — but we depend
+  //    DIGESTHTML merge field is non-empty for this run — but we depend
   //    on having only just-prepared fans in the audience. (For V1 we
   //    accept the simplification; a saved segment can be added later if
   //    we want stricter targeting.)
@@ -207,7 +207,7 @@ export async function fireDigestCampaign(
     return { ok: false, error: "Mailchimp campaigns POST: missing id in response" };
   }
 
-  // 2. Set the campaign content. The HTML uses *|DIGEST_BLOCK|* and
+  // 2. Set the campaign content. The HTML uses *|DIGESTHTML|* and
   //    *|FNAME|* merge tags so each recipient sees their own content.
   const setContent = await fetch(`${base}/campaigns/${campaign.id}/content`, {
     method: "PUT",
@@ -290,7 +290,7 @@ function subscriberHash(email: string): string {
   return createHash("md5").update(email.toLowerCase()).digest("hex");
 }
 
-/** Master campaign template HTML. Uses *|DIGEST_BLOCK|* and *|FNAME|*
+/** Master campaign template HTML. Uses *|DIGESTHTML|* and *|FNAME|*
  *  merge tags. Mailchimp will replace these per recipient at send time.
  *
  *  In the Mailchimp dashboard, you can replace this with a richer
@@ -304,7 +304,7 @@ function campaignTemplateHtml(): string {
 <body style="margin:0; padding:24px; background:#fff; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <div style="max-width:560px; margin:0 auto;">
     <p style="margin:0 0 24px 0; font-size:13px; color:#999; text-transform:uppercase; letter-spacing:0.08em;">Fan Engage · Weekly Digest</p>
-    *|DIGEST_BLOCK|*
+    *|DIGESTHTML|*
     <p style="margin:32px 0 0 0; padding-top:16px; border-top:1px solid #eee; font-size:11px; color:#999;">
       You're getting this because you opted into Fan Engage email updates.
       <a href="*|UNSUB|*" style="color:#666;">Unsubscribe from all Fan Engage emails</a>.
@@ -316,7 +316,7 @@ function campaignTemplateHtml(): string {
 }
 
 function campaignTemplatePlainText(): string {
-  return `*|DIGEST_TEXT|*
+  return `*|DIGESTTEXT|*
 
 ---
 You're getting this because you opted into Fan Engage email updates.

@@ -660,12 +660,12 @@ community. Sundays 09:00 UTC.
   digest even if `ANTHROPIC_API_KEY` is missing.
 - `render.ts` — `renderDigestPayload(payload)` returns
   `{ html, text }`. Email-safe HTML (inline styles, no fonts/images)
-  meant for the Mailchimp `DIGEST_BLOCK` merge field. Every link
+  meant for the Mailchimp `DIGESTHTML` merge field. Every link
   carries UTM params for click-through measurement.
 - `send.ts` — `prepareDigestForFan(recipient)` runs the full
   gather→summarize→render pipeline + PUTs the merge fields into
   Mailchimp. `fireDigestCampaign(count)` creates + sends ONE
-  campaign that templates `*|DIGEST_BLOCK|*` — Mailchimp inlines
+  campaign that templates `*|DIGESTHTML|*` — Mailchimp inlines
   each recipient's merge values. `recordDigestSent(...)` upserts the
   audit row.
 - `index.ts` — barrel.
@@ -693,8 +693,8 @@ select count(*) from public.list_digest_recipients(500);
 ### Step 2 — Add custom merge fields in Mailchimp
 
 The digest pipeline writes per-fan rendered HTML into a Mailchimp
-custom merge field called `DIGEST_BLOCK`, plus a plain-text fallback
-in `DIGEST_TEXT`. These don't exist in the audience by default —
+custom merge field called `DIGESTHTML`, plus a plain-text fallback
+in `DIGESTTEXT`. These don't exist in the audience by default —
 you have to create them once.
 
 1. Open https://us21.admin.mailchimp.com/audience/settings/merge-fields/
@@ -702,14 +702,14 @@ you have to create them once.
    `MAILCHIMP_SERVER_PREFIX`).
 2. Click **Add a field** → **Text** field.
    - **Field label**: `Digest HTML Block`
-   - **Field tag**: `DIGEST_BLOCK`
+   - **Field tag**: `DIGESTHTML`
    - **Visible**: unchecked (don't show it in subscriber profiles)
    - **Required**: unchecked
    - **Default value**: leave empty
    - **Click "Save changes"**
-3. Repeat for `DIGEST_TEXT`:
+3. Repeat for `DIGESTTEXT`:
    - **Field label**: `Digest Text Fallback`
-   - **Field tag**: `DIGEST_TEXT`
+   - **Field tag**: `DIGESTTEXT`
    - same settings as above
 4. Mailchimp's default text-field max length is 80 characters. The
    digest HTML can be up to 6,000 chars. **Increase both fields'
@@ -727,6 +727,14 @@ merge fields (`DIGEST_VIBE_1`, `DIGEST_TOP_POST_1_TITLE`, etc.)
 and a richer template. That's a follow-up; ship the simple version
 first and see if it bumps against the limit.
 
+
+**Note on merge-tag character limit:** Mailchimp caps merge tags at
+**10 characters** — that's why we use `DIGESTHTML` and `DIGESTTEXT`
+instead of the more-descriptive `DIGEST_BLOCK` / `DIGEST_TEXT` we'd
+otherwise prefer. If you change tag names, also update the merge-field
+references in `frontend/lib/digest/send.ts` (search for `DIGESTHTML`
+and `DIGESTTEXT`) so the runtime values match.
+
 ### Step 3 — (Optional) Set up a Mailchimp template
 
 The cron's `fireDigestCampaign()` ships a default minimal template
@@ -735,7 +743,7 @@ dashboard:
 
 1. Templates → Create template
 2. Use a layout that has a content block
-3. In the content area, drop `*|FNAME|*` and `*|DIGEST_BLOCK|*` merge
+3. In the content area, drop `*|FNAME|*` and `*|DIGESTHTML|*` merge
    tags
 4. Save the template name. (For V1 we don't reference a saved
    template — `cron-route.ts` posts the HTML inline. To use a saved
