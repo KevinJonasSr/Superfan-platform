@@ -112,12 +112,18 @@ export async function addCommentAction(formData: FormData) {
 
   const { supabase, userId } = await requireUser();
 
+  // Phase 3 #3: track AI-drafted comments for A/B analysis. Form sets
+  // draft_used="1" when user picked from the drafter chips before
+  // posting. False otherwise. Default to false on absent / unparseable.
+  const draftUsed = String(formData.get("draft_used") ?? "0") === "1";
+
   const { data: created } = await supabase
     .from("community_comments")
     .insert({
       post_id: postId,
       author_id: userId,
       body,
+      draft_used: draftUsed,
     })
     .select("id")
     .single();

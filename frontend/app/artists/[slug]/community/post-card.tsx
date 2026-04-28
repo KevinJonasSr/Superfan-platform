@@ -7,6 +7,7 @@ import type {
   CommunityPost,
   PollData,
 } from "@/lib/data/types";
+import CommentComposer from "./comment-composer";
 import {
   addCommentAction,
   deletePostAction,
@@ -229,24 +230,7 @@ export default function PostCard({
             </div>
           ))}
           {currentUserId && (
-            <form action={addCommentAction} className="flex items-start gap-2">
-              <input type="hidden" name="post_id" value={post.id} />
-              <input type="hidden" name="artist_slug" value={post.artist_slug} />
-              <textarea
-                name="body"
-                required
-                maxLength={1000}
-                rows={2}
-                placeholder="Add a comment… (+2 pts)"
-                className="flex-1 resize-none rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
-              />
-              <button
-                type="submit"
-                className="rounded-full bg-white/10 px-4 py-2 text-sm text-white/90 hover:bg-white/15"
-              >
-                Post
-              </button>
-            </form>
+            <CommentComposer postId={post.id} artistSlug={post.artist_slug} />
           )}
         </div>
       )}
