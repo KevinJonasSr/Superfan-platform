@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAdminUser } from "@/lib/admin";
+import { indexRowAsync } from "@/lib/embeddings";
 
 type Visibility = "public" | "premium" | "founder-only";
 
@@ -42,15 +43,23 @@ export async function createPostAction(formData: FormData) {
   const videoUrl = normalizeUrl(videoUrlRaw);
   const videoPosterUrl = normalizeUrl(videoPosterUrlRaw);
 
-  await supabase.from("community_posts").insert({
-    artist_slug: artistSlug,
-    author_id: userId,
-    kind: "post",
-    body,
-    image_url: imageUrl,
-    video_url: videoUrl,
-    video_poster_url: videoPosterUrl,
-  });
+  const { data: created } = await supabase
+    .from("community_posts")
+    .insert({
+      artist_slug: artistSlug,
+      author_id: userId,
+      kind: "post",
+      body,
+      image_url: imageUrl,
+      video_url: videoUrl,
+      video_poster_url: videoPosterUrl,
+    })
+    .select("id")
+    .single();
+
+  // Fire-and-forget — embedding lands within seconds, backfill cron is the
+  // safety net if this path fails.
+  if (created) indexRowAsync("community_posts", created.id);
 
   revalidatePath(`/artists/${artistSlug}/community`);
   revalidatePath(`/artists/${artistSlug}`);
@@ -101,11 +110,17 @@ export async function addCommentAction(formData: FormData) {
 
   const { supabase, userId } = await requireUser();
 
-  await supabase.from("community_comments").insert({
-    post_id: postId,
-    author_id: userId,
-    body,
-  });
+  const { data: created } = await supabase
+    .from("community_comments")
+    .insert({
+      post_id: postId,
+      author_id: userId,
+      body,
+    })
+    .select("id")
+    .single();
+
+  if (created) indexRowAsync("community_comments", created.id);
 
   revalidatePath(`/artists/${artistSlug}/community`);
 }
@@ -163,6 +178,8 @@ export async function createPollAction(formData: FormData) {
     .single();
   if (!post) return;
 
+  indexRowAsync("community_posts", post.id);
+
   await admin.from("community_poll_options").insert(
     options.map((label, i) => ({
       post_id: post.id,
@@ -211,14 +228,20 @@ export async function createChallengeAction(formData: FormData) {
   if (!artistSlug || !body) return;
 
   const admin = createAdminClient();
-  await admin.from("community_posts").insert({
-    artist_slug: artistSlug,
-    author_id: adminUser.id,
-    kind: "challenge",
-    title: title || null,
-    body,
-    visibility,
-  });
+  const { data: created } = await admin
+    .from("community_posts")
+    .insert({
+      artist_slug: artistSlug,
+      author_id: adminUser.id,
+      kind: "challenge",
+      title: title || null,
+      body,
+      visibility,
+    })
+    .select("id")
+    .single();
+
+  if (created) indexRowAsync("community_posts", created.id);
 
   revalidatePath(`/artists/${artistSlug}/community`);
 }
@@ -263,18 +286,24 @@ export async function createAnnouncementAction(formData: FormData) {
   const videoPosterUrl = normalizeUrl(videoPosterUrlRaw);
 
   const admin = createAdminClient();
-  await admin.from("community_posts").insert({
-    artist_slug: artistSlug,
-    author_id: adminUser.id,
-    kind: "announcement",
-    title: title || null,
-    body,
-    pinned: true, // announcements are pinned by default
-    visibility,
-    image_url: imageUrl,
-    video_url: videoUrl,
-    video_poster_url: videoPosterUrl,
-  });
+  const { data: created } = await admin
+    .from("community_posts")
+    .insert({
+      artist_slug: artistSlug,
+      author_id: adminUser.id,
+      kind: "announcement",
+      title: title || null,
+      body,
+      pinned: true, // announcements are pinned by default
+      visibility,
+      image_url: imageUrl,
+      video_url: videoUrl,
+      video_poster_url: videoPosterUrl,
+    })
+    .select("id")
+    .single();
+
+  if (created) indexRowAsync("community_posts", created.id);
 
   revalidatePath(`/artists/${artistSlug}/community`);
 }
