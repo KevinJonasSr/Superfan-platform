@@ -28,7 +28,7 @@ import RsvpButton from "./rsvp-button";
  * in LAUNCH_CHECKLIST.md under the post-launch backlog.
  */
 const HERO_FOCAL_Y_BY_SLUG: Record<string, number> = {
-  "hunter-hawkins": 80,
+  "hunter-hawkins": 90,
 };
 const DEFAULT_HERO_FOCAL_Y = 30;
 
