@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAdminUser } from "@/lib/admin";
 import { indexRowAsync } from "@/lib/embeddings";
+import { moderateRowAsync } from "@/lib/moderation";
 
 type Visibility = "public" | "premium" | "founder-only";
 
@@ -60,6 +61,7 @@ export async function createPostAction(formData: FormData) {
   // Fire-and-forget — embedding lands within seconds, backfill cron is the
   // safety net if this path fails.
   if (created) indexRowAsync("community_posts", created.id);
+  if (created) moderateRowAsync("community_posts", created.id);
 
   revalidatePath(`/artists/${artistSlug}/community`);
   revalidatePath(`/artists/${artistSlug}`);
@@ -121,6 +123,7 @@ export async function addCommentAction(formData: FormData) {
     .single();
 
   if (created) indexRowAsync("community_comments", created.id);
+  if (created) moderateRowAsync("community_comments", created.id);
 
   revalidatePath(`/artists/${artistSlug}/community`);
 }
@@ -179,6 +182,7 @@ export async function createPollAction(formData: FormData) {
   if (!post) return;
 
   indexRowAsync("community_posts", post.id);
+  moderateRowAsync("community_posts", post.id);
 
   await admin.from("community_poll_options").insert(
     options.map((label, i) => ({
@@ -242,6 +246,7 @@ export async function createChallengeAction(formData: FormData) {
     .single();
 
   if (created) indexRowAsync("community_posts", created.id);
+  if (created) moderateRowAsync("community_posts", created.id);
 
   revalidatePath(`/artists/${artistSlug}/community`);
 }
@@ -304,6 +309,7 @@ export async function createAnnouncementAction(formData: FormData) {
     .single();
 
   if (created) indexRowAsync("community_posts", created.id);
+  if (created) moderateRowAsync("community_posts", created.id);
 
   revalidatePath(`/artists/${artistSlug}/community`);
 }
