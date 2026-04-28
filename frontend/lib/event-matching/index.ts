@@ -20,5 +20,7 @@ export {
   type MatchEventResult,
 } from "./match-event";
 
-// Phase 8.4 will add:
-//   export { sendEventMatchNotifications } from "./send";
+export {
+  sendEventMatchNotifications,
+  type SendEventMatchResult,
+} from "./send";
