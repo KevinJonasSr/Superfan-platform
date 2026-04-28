@@ -29,9 +29,10 @@ import RsvpButton from "./rsvp-button";
  */
 const HERO_FOCAL_Y_BY_SLUG: Record<string, number> = {
   "hunter-hawkins": 90,
-  // New hero photo (lake + cabins) places RaeLynn low in the frame —
-  // a high focal-y brings her face into the middle of the visible hero.
-  "raelynn": 75,
+  // New hero photo (lake + cabins) places RaeLynn low in the frame.
+  // 55 = midpoint between the default 30 (head too low) and 75 (head
+  // cropped at top). Adjust by ~5 if you want more or less headroom.
+  "raelynn": 55,
 };
 const DEFAULT_HERO_FOCAL_Y = 30;
 
