@@ -4,6 +4,8 @@ import { getArtistFromDb } from "@/lib/data/artists";
 import { listRewardsForCommunity, listMyRedemptions } from "@/lib/data/rewards";
 import Image from "next/image";
 import RewardCardWithForm from "./reward-card";
+import RecommendedRewardCard from "./recommended-reward-card";
+import { recommendReward } from "@/lib/recs";
 
 export const dynamic = "force-dynamic";
 
@@ -33,10 +35,14 @@ async function FanPoints() {
 
 export default async function RewardsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ dismiss_rec?: string }>;
 }) {
   const { slug } = await params;
+  const sp = await searchParams;
+  const dismissRec = sp?.dismiss_rec === "1";
   const supabase = await createClient();
   const {
     data: { user },
@@ -49,9 +55,12 @@ export default async function RewardsPage({
   const artist = await getArtistFromDb(slug);
   if (!artist) return notFound();
 
-  const [rewards, myRedemptions] = await Promise.all([
+  const [rewards, myRedemptions, rec] = await Promise.all([
     listRewardsForCommunity(slug),
     listMyRedemptions(user.id),
+    dismissRec
+      ? Promise.resolve(null)
+      : recommendReward({ fanId: user.id, communityId: slug }),
   ]);
 
   const recentRedemptions = myRedemptions.slice(0, 5);
@@ -71,6 +80,15 @@ export default async function RewardsPage({
         <div className="mb-6">
           <FanPoints />
         </div>
+
+        {/* Recommended hero card (Phase 10) */}
+        {rec && (
+          <RecommendedRewardCard
+            reward={rec}
+            artistSlug={slug}
+            dismissHref={`/artists/${slug}/rewards?dismiss_rec=1`}
+          />
+        )}
 
         {/* Rewards Grid */}
         {rewards.length > 0 ? (
