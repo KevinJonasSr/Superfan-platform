@@ -1,12 +1,27 @@
 import Link from "next/link";
 import type { FanHomeData, FanHomeUpcomingEvent } from "@/lib/data/fan-home";
 
-// Per-artist focal-y override for the Following strip card photo.
-// Mirrors the map in app/artists/[slug]/page.tsx. Default 0% =
-// `object-top` (head visible for typical top-of-frame portraits).
-// Bump higher when the subject sits low in the source photo.
-const STRIP_FOCAL_Y_BY_SLUG: Record<string, number> = {
-  raelynn: 100,
+/**
+ * Per-artist photo override for the Following strip card.
+ *
+ * `focalY` controls object-position (0% = top-anchored, 100% = bottom).
+ * `transform` + `transformOrigin` let us zoom into a specific area of
+ * the source photo when object-position alone can't lift the subject
+ * enough — e.g. RaeLynn's lake photo, where she sits in the lower-
+ * middle of a 1281x1920 portrait and the 3:4 strip crop only nibbles
+ * 11% off the top.
+ */
+type StripPhotoOverride = {
+  focalY?: number;
+  transform?: string;
+  transformOrigin?: string;
+};
+const STRIP_PHOTO_OVERRIDES: Record<string, StripPhotoOverride> = {
+  raelynn: {
+    focalY: 100,
+    transform: "scale(1.6)",
+    transformOrigin: "center bottom",
+  },
 };
 const STRIP_DEFAULT_FOCAL_Y = 0;
 
@@ -123,19 +138,24 @@ function FollowedArtistsStrip({
               {a.hero_image ? (
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={a.hero_image}
-                    alt=""
-                    // Per-artist focal-y override (see STRIP_FOCAL_Y_BY_SLUG).
-                    // 0% = top-anchored (head visible for top-of-frame portraits).
-                    // Higher values shift the visible window down for photos
-                    // where the subject sits low in the frame.
-                    style={{
-                      objectPosition: `center ${STRIP_FOCAL_Y_BY_SLUG[a.slug] ?? STRIP_DEFAULT_FOCAL_Y}%`,
-                    }}
-                    className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-[1.04]"
-                    aria-hidden
-                  />
+                  {(() => {
+                    const o = STRIP_PHOTO_OVERRIDES[a.slug] ?? {};
+                    const focalY = o.focalY ?? STRIP_DEFAULT_FOCAL_Y;
+                    return (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={a.hero_image}
+                        alt=""
+                        style={{
+                          objectPosition: `center ${focalY}%`,
+                          ...(o.transform && { transform: o.transform }),
+                          ...(o.transformOrigin && { transformOrigin: o.transformOrigin }),
+                        }}
+                        className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-[1.04]"
+                        aria-hidden
+                      />
+                    );
+                  })()}
                 </>
               ) : (
                 // Fallback when no hero is uploaded yet — accent gradient stand-in.
