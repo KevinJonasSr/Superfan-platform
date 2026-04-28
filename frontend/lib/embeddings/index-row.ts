@@ -86,7 +86,7 @@ export async function indexRow(
         .maybeSingle();
       if (error) return { status: "error", error: error.message };
       if (!data) return { status: "skipped_no_row" };
-      row = data as Record<string, unknown>;
+      row = data as unknown as Record<string, unknown>;
     } else {
       // Standard uuid-keyed tables.
       const { data, error } = await admin
@@ -96,7 +96,7 @@ export async function indexRow(
         .maybeSingle();
       if (error) return { status: "error", error: error.message };
       if (!data) return { status: "skipped_no_row" };
-      row = data as Record<string, unknown>;
+      row = data as unknown as Record<string, unknown>;
     }
 
     if (!row) return { status: "skipped_no_row" };
