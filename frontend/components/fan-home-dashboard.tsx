@@ -24,7 +24,7 @@ const STRIP_PHOTO_OVERRIDES: Record<string, StripPhotoOverride> = {
     // zoom to the bottom-left to slide the visible window over to
     // where she actually is — otherwise the centered zoom leaves her
     // hugging the left edge of the card.
-    transformOrigin: "left bottom",
+    transformOrigin: "25% bottom",
   },
 };
 const STRIP_DEFAULT_FOCAL_Y = 0;
