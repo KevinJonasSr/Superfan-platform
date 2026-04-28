@@ -172,16 +172,18 @@ export default async function RewardsPage() {
                           return (
                             <div
                               key={badge.slug}
-                              className={`rounded-2xl border p-4 ${
+                              className={`rounded-2xl border p-5 ${
                                 badge.earned
                                   ? "border-emerald-500/40 bg-emerald-500/10"
                                   : "border-white/10 bg-black/30"
                               }`}
                             >
-                              <div className="flex items-start gap-3">
+                              <div className="flex items-start gap-4">
                                 <span
-                                  className={`flex h-10 w-10 items-center justify-center rounded-full text-xl ${
-                                    badge.earned ? "bg-emerald-500/20" : "bg-white/5 grayscale opacity-70"
+                                  className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-3xl ${
+                                    badge.earned
+                                      ? "bg-gradient-to-br from-emerald-400/30 to-aurora/30 ring-1 ring-emerald-400/40"
+                                      : "bg-gradient-to-br from-white/10 to-white/5 grayscale opacity-70"
                                   }`}
                                   aria-hidden
                                 >
