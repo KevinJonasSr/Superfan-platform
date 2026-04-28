@@ -37,6 +37,8 @@ export async function createPostAction(formData: FormData) {
   const imageUrlRaw = String(formData.get("image_url") ?? "").trim();
   const videoUrlRaw = String(formData.get("video_url") ?? "").trim();
   const videoPosterUrlRaw = String(formData.get("video_poster_url") ?? "").trim();
+  // Phase 12: caption_used="1" when fan picked from a Claude vision suggestion.
+  const captionUsed = String(formData.get("caption_used") ?? "0") === "1";
   if (!artistSlug || !body) return;
   if (body.length > 2000) return;
 
@@ -55,6 +57,7 @@ export async function createPostAction(formData: FormData) {
       image_url: imageUrl,
       video_url: videoUrl,
       video_poster_url: videoPosterUrl,
+      caption_used: captionUsed,
     })
     .select("id")
     .single();

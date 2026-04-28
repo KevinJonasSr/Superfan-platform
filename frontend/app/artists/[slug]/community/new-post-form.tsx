@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import ImageUploader from "@/components/image-uploader";
 import VideoUploader from "@/components/video-uploader";
+import CaptionSuggester from "./caption-suggester";
 import { useFormSave, SaveStatusIndicator } from "@/lib/use-form-save";
 import {
   createAnnouncementAction,
@@ -27,6 +28,13 @@ export default function NewPostForm({
   // Bump this key to force-remount the ImageUploader after a submit (which
   // clears its internal state + hidden input).
   const [uploaderKey, setUploaderKey] = useState(0);
+  // Phase 12: caption suggester state — image url comes from the
+  // ImageUploader.onUploaded callback so the suggester can fetch it,
+  // body is mirrored so we can append the picked caption, captionUsed
+  // flips when fan picks a suggestion (rides with the form).
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [body, setBody] = useState<string>("");
+  const [captionUsed, setCaptionUsed] = useState<boolean>(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   const { status, invoke, submitting } = useFormSave();
@@ -36,6 +44,9 @@ export default function NewPostForm({
     setPollOptions(["", ""]);
     setVisibility("public");
     setUploaderKey((k) => k + 1);
+    setImageUrl(null);
+    setBody("");
+    setCaptionUsed(false);
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -177,6 +188,8 @@ export default function NewPostForm({
         name="body"
         required
         maxLength={2000}
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
         placeholder={
           kind === "poll"
             ? "Ask a question… e.g. Which song should we play next?"
@@ -189,6 +202,7 @@ export default function NewPostForm({
         rows={3}
         className="w-full resize-none rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
       />
+      <input type="hidden" name="caption_used" value={captionUsed ? "1" : "0"} />
 
       {kind === "poll" && (
         <div className="space-y-2">
@@ -233,12 +247,38 @@ export default function NewPostForm({
       )}
 
       {kind !== "poll" && (
-        <ImageUploader
-          key={uploaderKey}
-          bucket="community-uploads"
-          name="image_url"
-          label={kind === "challenge" ? "Add cover photo" : "Add photo"}
-        />
+        <>
+          <ImageUploader
+            key={uploaderKey}
+            bucket="community-uploads"
+            name="image_url"
+            label={kind === "challenge" ? "Add cover photo" : "Add photo"}
+            onUploaded={(url) => {
+              setImageUrl(url);
+              // A fresh upload resets the suggested-caption flag —
+              // any earlier pick was for a different photo.
+              setCaptionUsed(false);
+            }}
+          />
+          {/* Phase 12: caption suggester — only renders when an image is uploaded. */}
+          {imageUrl && (
+            <CaptionSuggester
+              imageUrl={imageUrl}
+              partialBody={body}
+              artistSlug={artistSlug}
+              onPick={(caption) => {
+                // Append (don't replace) so a fan who's already typing
+                // doesn't lose their thought. If body is empty, just set.
+                setBody((prev) =>
+                  prev.trim().length === 0
+                    ? caption
+                    : `${prev.replace(/\s+$/, "")} ${caption}`,
+                );
+              }}
+              onUsedChange={setCaptionUsed}
+            />
+          )}
+        </>
       )}
 
       {(kind === "post" || kind === "announcement") && (
