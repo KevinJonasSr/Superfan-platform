@@ -1136,3 +1136,114 @@ fires the search. A typeahead variant could:
 The pieces are all there; we just need to add a `?limit=N`
 parameter to the route + workhorse and a small dropdown UI on top
 of `<SearchInput>`.
+
+---
+
+## Phase 8 — Smart event-match notifications
+
+When a new event is created, score the artist's followers on geo
+proximity, past RSVP rate, recent engagement, and tier; cap at the
+top 25%; let an admin review the candidate list and click Send.
+This is recommendation #8 from `FAN_ENGAGE_AI_RECOMMENDATIONS.md`.
+
+### Important design choice — no auto-send
+
+The recs doc warns that bad SMS targeting causes fatigue + opt-outs.
+We don't auto-send. Every notification batch goes through the admin
+preview UI at:
+
+```
+/admin/artists/[slug]/events/[id]/match
+```
+
+Admin reviews the ranked candidate list with full score-component
+breakdown, then clicks Send. The pre-compute cron just makes the
+preview load fast; it doesn't fire anything.
+
+### Score function
+
+```
+total = 0.4 * geo + 0.3 * past_rsvp_rate + 0.2 * engagement + 0.1 * tier_weight
+```
+
+All four components clamped to [0, 1]. Total clamped to [0, 1]. Cap
+at the top 25% by score, then drop anyone below an absolute 0.15
+floor (prevents spamming when the follower pool is small).
+
+| Component | Source | v1 algorithm |
+|-----------|--------|--------------|
+| `geo` | `fans.city` × `artist_events.location` | string substring match (1.0), state-token match (0.5), else 0 |
+| `past_rsvp_rate` | `event_rsvps` joined to past `artist_events` of this artist | RSVPs / total past events, capped at 1.0 |
+| `engagement` | `community_comments` last 30 days on this artist's posts | count / 5, capped at 1.0 |
+| `tier_weight` | `fans.current_tier` | founder=1.0, platinum=.85, gold=.7, silver=.5, bronze=.25 |
+
+### Files
+
+- `lib/event-matching/score.ts` — pure scoring functions.
+- `lib/event-matching/match-event.ts` — `matchEvent(eventId)` workhorse.
+- `lib/event-matching/send.ts` — `sendEventMatchNotifications(eventId)`.
+- `lib/event-matching/index.ts` — barrel.
+- `app/admin/artists/[slug]/events/[id]/match/page.tsx` — preview UI.
+- `app/admin/artists/[slug]/events/[id]/match/actions.ts` — server
+  actions (`rescoreEventAction`, `sendEventMatchAction`).
+- `app/api/cron/event-match-prepare/route.ts` — pre-compute cron.
+- `supabase/migrations/0029_event_match.sql` — schema.
+
+### Notification channels
+
+1. **In-app notifications** — always written, regardless of SMS
+   opt-in. Idempotent via `notifications.dedup_key =
+   'event-match:<event_id>:<fan_id>'`.
+2. **SMS** — only if Twilio is configured AND `fans.sms_opted_in =
+   true` AND `fans.phone` is non-empty. Includes the 10DLC-required
+   "Reply STOP to opt out" footer.
+
+If Twilio isn't configured, in-app notifications still fire — SMS is
+treated as best-effort enrichment.
+
+### Costs
+
+Zero AI cost for v1. The recs doc mentions an optional Claude step to
+rewrite SMS bodies per fan ("Hey Sarah, you'd love this one") — that's
+deferred until we have data to validate it's worth the per-message
+spend. Current SMS cost is just Twilio's per-message fee.
+
+### Tunables
+
+In `lib/event-matching/score.ts`:
+
+- `SCORE_WEIGHTS` — the 0.4/0.3/0.2/0.1 split. Bump engagement weight
+  if the audience is mostly online-only; bump geo for in-person
+  artists.
+- `CANDIDATE_TOP_PERCENT = 0.25` — recs doc says 25%. Lower for
+  fatigued audiences, higher for sparse engagement.
+- `CANDIDATE_MIN_SCORE = 0.15` — absolute floor. Set to 0 if you want
+  to always notify the top N regardless of how cold the signal is.
+
+### Failure modes
+
+- **No followers** — `matchEvent()` returns gracefully with 0
+  candidates; admin sees an empty table.
+- **No past events for this artist** — `past_rsvp_rate` is 0 for
+  everyone; engagement + tier carry the score.
+- **Twilio not configured** — `sendEventMatchNotifications()` still
+  writes in-app rows; SMS counters are 0.
+- **Twilio rate-limited** — per-send try/catch records the failure
+  in `event_match_log.errors[]` but doesn't stop the loop. Throttle
+  is 250ms between sends.
+- **Re-clicked Send** — already-sent rows are skipped; in-app
+  notification dedup_key prevents inbox duplicates even on
+  partial-failure retries.
+
+### Future (V2)
+
+- **Real geocoding** — geocode `fans.city` + `artist_events.location`
+  into lat/lng, replace string match with sigmoid-over-miles. Saved
+  in the post-launch checklist.
+- **Engagement decay** — weight recent reactions higher than
+  3-week-old comments via exponential decay. Drop-in change in
+  `loadEngagementSignal`.
+- **Per-fan SMS rewrite** — Claude Haiku call to personalize the
+  SMS body. Should not ship until we have an A/B baseline.
+- **Push notifications** — third channel alongside in-app + SMS.
+  Requires PWA push setup.

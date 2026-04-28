@@ -598,6 +598,153 @@ After all 10 pass, search is launch-ready.
 
 ---
 
+## 🎯 AI feature metrics — event-match notifications (Phase 8)
+
+The smart-match flow at `/admin/artists/[slug]/events/[id]/match`
+ships dark — it's admin-only and never auto-sends. These queries
+plus a content-threshold-gated smoke test let us verify the scoring
+is sane before fans see anything.
+
+### Backfill health (cron is keeping up)
+
+```sql
+select
+  count(*) filter (where match_processed_at is not null) as scored,
+  count(*) filter (where match_processed_at is null
+                   and active = true
+                   and (starts_at is null or starts_at > now())) as pending
+from public.artist_events;
+```
+
+`pending` should hit zero within ~15 minutes of any new event being
+created. If it doesn't, check Vercel logs for
+`/api/cron/event-match-prepare`.
+
+### Score distribution per event (sanity check)
+
+```sql
+select
+  e.title,
+  count(*) as total_followers,
+  count(*) filter (where l.is_candidate) as candidates,
+  round(avg(l.total_score)::numeric, 3) as avg_score,
+  round(max(l.total_score)::numeric, 3) as max_score,
+  round(min(l.total_score)::numeric, 3) as min_score
+from public.event_match_log l
+join public.artist_events e on e.id = l.event_id
+group by 1
+order by 1;
+```
+
+Watch for:
+  * **Everyone is a candidate** → either follower pool is tiny (fine)
+    or the 0.15 min-score floor is too low.
+  * **Nobody is a candidate** → either the artist has no past events
+    AND no engagement history (early days for them), or a scoring
+    component regressed. Manually call `matchEvent(eventId)` and
+    inspect score_components for one row.
+  * **All scores are ~0.1** → geo is failing (city strings don't
+    match), engagement is empty, no past RSVPs. Investigate fans.city
+    population.
+
+### Component breakdown (which signal carries the score)
+
+```sql
+select
+  round(avg((score_components->>'geo')::numeric), 3)            as avg_geo,
+  round(avg((score_components->>'past_rsvp_rate')::numeric), 3) as avg_rsvp,
+  round(avg((score_components->>'engagement')::numeric), 3)     as avg_eng,
+  round(avg((score_components->>'tier_weight')::numeric), 3)    as avg_tier
+from public.event_match_log
+where computed_at > now() - interval '7 days';
+```
+
+If `avg_eng` and `avg_rsvp` are both ~0, the only signals doing
+anything are geo + tier_weight, which means we're effectively
+shipping #8 without its main differentiator. Wait until there's
+enough RSVP / engagement history.
+
+### Send efficacy (post-send only)
+
+```sql
+select
+  count(*) filter (where 'in_app' = any(channels_sent)) as in_app_sent,
+  count(*) filter (where 'sms'    = any(channels_sent)) as sms_sent,
+  count(*) filter (where sent_at is not null
+                    and channels_sent = '{}')          as sent_with_no_channels
+from public.event_match_log
+where sent_at > now() - interval '14 days';
+```
+
+`sent_with_no_channels` should be zero. If it's not, the send loop
+is stamping rows without firing anything — bug.
+
+### Smoke test (run when there's enough activity to be meaningful)
+
+Don't bother running this until the platform has at least:
+  - 1 artist with a future event scheduled
+  - 5+ fans following that artist
+  - At least 1 past event from that artist with 1+ RSVP recorded
+  - At least 1 fan with `sms_opted_in = true` and a real phone
+
+Below that threshold, the score components don't have enough signal
+to differentiate candidates and the test doesn't tell you anything.
+
+When ready, run through:
+
+1. **Match preview link visible** — `/admin/artists/<slug>` shows
+   the 🎯 Match preview link beside ✏️ Edit on each event row.
+2. **First-visit auto-score** — Click Match preview on an event
+   that's never been scored. The page should compute candidates
+   inline (slow first time, ~1-3s) and stamp
+   `artist_events.match_processed_at`.
+3. **Re-score idempotency** — Click Re-score. Counter changes
+   nothing; rows in `event_match_log` get overwritten with fresh
+   values; no duplicate rows added.
+4. **Score component sanity** — Pick one fan in your audience whose
+   city matches the event location. Their `geo` should be 1.0; total
+   should be highest. Pick another fan whose city doesn't match —
+   their geo should be 0 (or 0.5 same-state).
+5. **Top-25% cap** — If the artist has 8+ followers, the candidate
+   count should be ≤ 25% of the total scored count.
+6. **Send (real fans, dry-run mode)** — In dev / staging only: click
+   Send notifications. Verify:
+       - One row appears in `notifications` per candidate with
+         `kind = 'event_match'` and a stable `dedup_key`.
+       - SMS only fired for fans with `sms_opted_in = true` AND a
+         non-empty phone.
+       - `event_match_log.sent_at` + `channels_sent` are populated.
+7. **Idempotent re-send** — Click Send again on the same event.
+   `attempted` returns 0 because there are no unsent candidates.
+   No new `notifications` rows. No SMS billed.
+8. **Dedup on re-send across runs** — Manually clear
+   `event_match_log.sent_at` for one fan. Re-click Send. The fan
+   gets stamped sent_at again but the `notifications` row is NOT
+   duplicated (dedup_key holds the line).
+9. **Twilio missing** — Temporarily unset `TWILIO_ACCOUNT_SID` env
+   var and Send. In-app rows still write; SMS counters are 0.
+10. **No followers** — Trigger Match preview for an event whose
+    artist has zero followers. Page should render the empty-state
+    message gracefully.
+
+After all 10 pass, the smart-match flow is launch-ready.
+
+### Real geocoding (post-launch upgrade)
+
+v1 uses string substring + state-token match for `geo`. Real
+geocoding (lat/lng + sigmoid over miles) is a Phase 8.7 upgrade:
+
+- Add `fans.lat / lng` and `artist_events.lat / lng` columns.
+- Backfill via Google Geocoding API or Mapbox (~$5 per 10k
+  geocodes, both keep results valid for 30 days per ToS).
+- Replace `scoreGeo()` with: `clamp01(1 - distanceMiles / 250)`
+  (250 mi = 0.0; same city ~ 0.99).
+
+Worth it once we have multi-state events + enough fans for the
+fuzzy city-string match to be the bottleneck.
+
+---
+
 ---
 
 ## ✅ Done
