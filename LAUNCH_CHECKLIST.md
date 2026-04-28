@@ -212,6 +212,50 @@ import ModerationButton from "@/app/admin/community/moderation-button";
 - [ ] **Fan Home Recent Activity expansion** — the data layer (`frontend/lib/data/fan-home.ts`) already pulls the 5 most recent community posts from followed artists, but the dashboard (`frontend/components/fan-home-dashboard.tsx` `<RecentActivityFeed>`) only renders the top 3. Two related upgrades worth picking up post-launch: (1) bump the visible count to 5 — trivial change to `posts.slice(0, 3)` — and/or raise the data layer's `.limit(8)` if we want a deeper feed; (2) add a "View all activity →" link at the bottom of the card that routes to a new per-fan activity index page (e.g. `/activity` or `/feed`) showing every recent post across followed artists, paginated, with body bodies and reactions. The index page would basically be a cross-artist version of `/artists/[slug]/community`. Estimated work: ~2 hours for the link + index page; ~5 minutes for the count bump on its own.
 - [ ] **Platform-wide badges architecture** — migration 0023 (`0023_fix_award_badge_delegate.sql`) shipped a tactical fix for the signup 42P10 by having `award_badge(uuid, text)` delegate to `award_community_badge(uuid, text, text)` with a hard-coded `community_id = 'raelynn'`. This works because every historical `fan_badges` row is already scoped to `'raelynn'` (the table's column default), but it's architecturally wrong: badges like `welcome`, `tier-bronze`, `recruiter`, `first-post`, `first-comment`, etc. are platform-wide achievements, not RaeLynn-specific ones. Two clean ways to fix it post-launch: (a) add a `'platform'` (or `'*'`) row to the `communities` table and use that as the default for non-scoped badges — minimal schema change, ~30 minutes including a backfill `update fan_badges set community_id = 'platform' where badge_slug in (...)`; or (b) split into separate `platform_badges` (one row per fan per badge) + `community_badges` (one row per fan per badge per community) tables — more correct data model but requires a migration that re-shards existing rows + updates every read path. Either way, also worth adding a `badges.scope` column with values `'platform' | 'community'` so the data layer can route awards to the right table/community without hard-coded slug lists. Tracker for the delegation hack: see migration 0023 header comment.
 
+## 📈 AI feature metrics — drafter A/B (Phase 3)
+
+Use these queries after the comment drafter has been live for a few
+weeks to validate the rec doc's +30% comment-volume hypothesis (see
+`FAN_ENGAGE_AI_RECOMMENDATIONS.md` recommendation #3 and
+`docs/AI_INFRASTRUCTURE.md` Phase 3).
+
+### Most recent comments (sanity check that draft_used is being recorded)
+
+```sql
+select id, body, draft_used, created_at
+from public.community_comments
+order by created_at desc
+limit 10;
+```
+
+### A/B comparison (works once you have ~50+ comments)
+
+```sql
+select draft_used,
+       count(*)                  as comments,
+       avg(length(body))::int    as avg_chars
+from public.community_comments
+where created_at > now() - interval '14 days'
+group by 1;
+```
+
+### Drafter usage rate (proxy for whether members find the ✨ button)
+
+```sql
+select 100.0 * count(*) filter (where draft_used)
+       / nullif(count(*), 0) as drafter_share_pct
+from public.community_comments
+where created_at > now() - interval '14 days';
+```
+
+Reading the result: < 10% drafter share = button isn't being seen
+(consider making it more prominent on the post card). > 40% = members
+love it (consider improving draft quality, adding regenerate-per-chip
+sub-buttons, etc.). Anywhere in between is good enough to keep
+shipping more AI features on top.
+
+---
+
 ---
 
 ## ✅ Done
