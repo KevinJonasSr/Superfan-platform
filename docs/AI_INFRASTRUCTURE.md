@@ -1342,3 +1342,97 @@ In `lib/recs/rewards.ts`:
   the carousel feels redundant.
 - **Click-through telemetry** — log when a fan clicks "View reward"
   vs "Hide" so we can A/B different score weightings.
+
+---
+
+## Phase 12 — Image-aware post captions
+
+When a fan uploads a photo to a community post, AI suggests 3
+captions in different tones (observational / enthusiastic /
+curious-question). Fan picks one or types their own. Recs doc #12,
+Score 2.0 — light version of Phase 3 (drafted comments) but for
+images.
+
+### Algorithm
+
+1. Fan attaches an image — `<ImageUploader />` writes the URL into
+   the form.
+2. `<CaptionSuggester />` renders next to the upload preview with a
+   ✨ Suggest captions button.
+3. Click → POST `/api/ai/caption-image` with
+   `{ imageUrl, partialBody, artistSlug }`.
+4. Route looks up community context (display_name, tagline) and
+   calls `suggestCaptions()` against Claude Haiku 4.5 vision.
+5. System prompt enforces: 3 captions, ≤100 chars, must reference
+   something visible in the photo, three distinct tones.
+6. Defensive parser validates shape; UI renders 3 picker chips.
+7. Click a chip → caption is appended to (or sets) the textarea.
+   `caption_used` flag flips to true; the form's hidden input
+   carries it through. createPostAction writes
+   `community_posts.caption_used = true`.
+
+Cost: ~1600 input tokens (image) + ~150 output × 3 captions ≈
+$0.0007 per click. 1000 photo posts/mo with the button clicked
+on every one = $0.70.
+
+### Files
+
+- `supabase/migrations/0031_caption_used.sql` — single-column add.
+- `lib/captions/client.ts` — Claude vision wrapper.
+- `lib/captions/index.ts` — barrel.
+- `app/api/ai/caption-image/route.ts` — auth-gated POST.
+- `app/artists/[slug]/community/caption-suggester.tsx` — client UI.
+- `app/artists/[slug]/community/new-post-form.tsx` — wires it in.
+- `app/artists/[slug]/community/actions.ts` — reads caption_used flag.
+
+### Why it's opt-in
+
+The suggester only fires when the fan clicks the button. We don't
+auto-call on every image upload because:
+  - It would burn Anthropic spend on photos the fan never publishes.
+  - Some fans want to type their own caption immediately and
+    proactively-generated suggestions feel patronizing.
+  - It gives us a clean A/B signal post-launch: caption_used=true
+    posts vs caption_used=false posts on the same images.
+
+### Tunables
+
+In `lib/captions/client.ts`:
+
+- `temperature: 0.7` — modest variety across 3 captions. Bump to 0.9
+  for more creative outputs; lower to 0.4 for safer / more literal.
+- `max_tokens: 400` — fits 3 captions × ~100 chars × json overhead
+  with headroom.
+- System prompt — one of the most important tunables. The "MUST
+  reference something visible in the photo" line is what prevents
+  generic "Beautiful shot!" failure mode. Bump prompt version when
+  changing.
+
+### Failure modes
+
+- **Anthropic 429 / 5xx** — `CaptionError` → 503 → UI shows "having
+  trouble, please try again". User can hit Regenerate or just type
+  their own.
+- **Image URL fetch fails on Anthropic side** — same 503 path.
+  Common cause: image bucket isn't actually public or URL is signed
+  with an expiring token. Check `bucket=community-uploads` is
+  configured for public read.
+- **JSON parse fails** — `CaptionError` thrown by parser → 503 → UI
+  shows generic error. Logged server-side. Bumping
+  CAPTION_PROMPT_VERSION + adjusting the system prompt fixes it.
+- **Empty image** — guarded at the API route (400 if missing).
+
+### Future (V2)
+
+- **Auto-pre-fill on upload** — if A/B data shows captions are
+  high-quality, consider auto-firing on upload and populating the
+  textarea with caption #1 (with the other 2 visible as alternates).
+  Saves the explicit click. Don't ship until we have data — see the
+  "Why it's opt-in" rationale above.
+- **Comment-side captions** — captions in comments could explain
+  reactions to posted images ("looking like the leopard fit is
+  going to be the move"). Same `lib/captions` underneath.
+- **Caption + auto-tag together** — Phase 5 tags posts based on
+  body text. If a fan picks an AI caption, run the tagger
+  immediately on the resulting body so the post lands in the right
+  filter chip without waiting for the cron.

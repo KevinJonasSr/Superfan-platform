@@ -875,6 +875,130 @@ exceeds ~10 rows per community.
 
 ---
 
+## 📷 AI feature metrics — image captions (Phase 12)
+
+The ✨ Suggest captions button on the post composer. Tracks fan
+adoption + engagement lift via the caption_used flag.
+
+### Adoption rate (proxy for whether the button is being seen)
+
+```sql
+select
+  count(*)                                          as photo_posts,
+  count(*) filter (where caption_used)              as ai_captioned,
+  round(100.0 * count(*) filter (where caption_used)
+        / nullif(count(*), 0), 1)                   as ai_caption_pct
+from public.community_posts
+where image_url is not null
+  and created_at > now() - interval '14 days';
+```
+
+Reading: < 5% pct = button isn't being seen (consider making it more
+prominent or auto-fire). > 40% = fans love it (consider the V2
+auto-pre-fill path documented in AI_INFRASTRUCTURE Phase 12).
+
+### Engagement A/B (post-launch insight)
+
+```sql
+-- Comments + reactions per post, split by AI caption usage.
+-- Run after >50 photo posts have accumulated.
+with post_engagement as (
+  select
+    p.id, p.caption_used,
+    (select count(*) from public.community_comments c where c.post_id = p.id) as comments,
+    (select count(*) from public.community_reactions r where r.post_id = p.id) as reactions
+  from public.community_posts p
+  where p.image_url is not null
+    and p.created_at > now() - interval '30 days'
+)
+select
+  caption_used,
+  count(*)                  as posts,
+  round(avg(comments)::numeric, 2) as avg_comments,
+  round(avg(reactions)::numeric, 2) as avg_reactions
+from post_engagement
+group by 1;
+```
+
+The hypothesis: caption_used=true posts have higher reactions (more
+specific captions catch attention) but similar comment counts (the
+caption itself doesn't ask a question by default). If reactions
+don't lift after ~50 posts each side, the system prompt needs a
+tone tweak.
+
+### Body length distribution (sanity check)
+
+```sql
+select
+  caption_used,
+  count(*) as n,
+  round(avg(length(body))::numeric, 0) as avg_chars,
+  percentile_cont(0.5) within group (order by length(body)) as median_chars
+from public.community_posts
+where image_url is not null
+  and created_at > now() - interval '30 days'
+group by 1;
+```
+
+We expect caption_used=true rows to have BOTH (a) a slightly
+shorter median (the AI suggestion is ≤100 chars) AND (b) a longer
+average (because the suggestion appends to whatever the fan
+already typed). If both are shorter than caption_used=false, fans
+are using the AI suggestion as a replacement, not an extension.
+
+### Smoke test (when there's at least one good image to test)
+
+Don't bother running until the platform has at least one fan account
+with a real photo to upload (e.g. a tour photo from a recent show).
+
+When ready, run through:
+
+1. **Button hidden before upload** — Open
+   /artists/<slug>/community. Click "+ New post". Confirm the
+   ✨ Suggest captions button is NOT visible.
+2. **Button shown after upload** — Attach an image. Suggester
+   panel appears next to the upload preview.
+3. **Generates 3 captions** — Click ✨ Suggest captions. Within
+   ~3 seconds, 3 chips appear with distinct tones (one
+   observational, one enthusiastic with maybe an emoji, one
+   ending with a question).
+4. **Pick → appends to body** — Click chip #2. Caption appears in
+   the textarea body. If you'd already typed something, the
+   caption is appended (with a space), not replacing your text.
+5. **caption_used flag travels** — Open browser devtools, inspect
+   form. Hidden input name="caption_used" has value "1".
+6. **Persisted on submit** — Submit the post. Reload Supabase Table
+   Editor on community_posts. Latest row shows caption_used=true.
+7. **Skip path** — New post, attach image, type a caption manually
+   without clicking the suggester. Submit. Row shows
+   caption_used=false. Confirms the flag doesn't accidentally
+   stay sticky across posts.
+8. **Regenerate** — Click ✨ Suggest captions, then ↻ Regenerate.
+   Get 3 new options. Different from the first set (temperature
+   0.7 ensures variation).
+9. **Empty image fallback** — Manually clear the image (re-upload
+   a different image). Suggester panel shows the new image's
+   captions, not stale ones from the previous upload. (The
+   ImageUploader.onUploaded callback resets caption_used.)
+10. **API key missing** — Temporarily remove ANTHROPIC_API_KEY in
+    Vercel and reload. Click ✨ Suggest captions. UI shows
+    'Caption suggester unavailable — API key not configured'
+    error inline. The rest of the form still works.
+
+After all 10 pass, captions are launch-ready.
+
+### V2 auto-pre-fill gate (post-launch decision)
+
+If the adoption query shows > 40% AI caption usage AND the A/B
+shows reactions lift > 15%, consider flipping to the auto-pre-fill
+mode: fire suggestCaptions() the moment the upload completes and
+populate caption #1 into the textarea automatically (with the other
+2 as alternates). One extra Anthropic call per upload — affordable
+unless costs balloon — and saves the fan one click. Don't ship
+until both metrics support it.
+
+---
+
 ---
 
 ## ✅ Done
