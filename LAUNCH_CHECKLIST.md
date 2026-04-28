@@ -329,6 +329,101 @@ costs, failure modes).
 
 ---
 
+## 🏷️ AI feature metrics — auto-tagging (Phase 5)
+
+Use these queries after the tagging cron has had a few weeks of real
+posts to validate the closed-vocabulary classifier is calibrated +
+to surface re-classification opportunities.
+
+### Backfill health (run anytime — should trend toward zero)
+
+```sql
+select
+  count(*) filter (where tagged_at is not null) as tagged,
+  count(*) filter (where tagged_at is null
+                   and (moderation_status is null or moderation_status != 'auto_hide')
+                   and length(coalesce(body,'')) > 0) as pending,
+  count(*) filter (where tagged_at is null
+                   and moderation_status = 'auto_hide') as skipped_auto_hide
+from public.community_posts;
+```
+
+`pending` should be near zero — anything stuck means the cron is
+failing. Check Vercel runtime logs for `/api/cron/tags-backfill`.
+
+### Tag distribution per community
+
+```sql
+select p.artist_slug, t.tag, count(*) as n
+from public.community_posts p, unnest(p.tags) as t(tag)
+where p.tagged_at is not null
+group by 1, 2
+order by 1, n desc;
+```
+
+Watch for two failure modes:
+  * **Over-concentrated** — one community has >40% of posts tagged
+    `other`. Means the closed vocabulary doesn't cover what fans are
+    actually posting about. Bump `TAG_PROMPT_VERSION` and add 1-3 new
+    canonical tags.
+  * **Mono-tag bias** — one tag (e.g. `live_show`) covers >60% of a
+    community's posts. Either it's the right call (artist literally
+    only posts about shows) or the classifier is reaching for a
+    fallback. Sample 10 rows tagged with that value and confirm.
+
+### Filter chip preview (what fans will see)
+
+```sql
+select * from public.list_top_tags_for_community('raelynn', 12);
+```
+
+Repeat per artist. The chip count + ordering on the live community
+page should match exactly.
+
+### Re-classification on prompt-version bump
+
+When you bump `TAG_PROMPT_VERSION` in `frontend/lib/tagging/client.ts`
+(e.g. after adding new vocabulary tags), mark stale rows for re-tagging:
+
+```sql
+update public.community_posts
+set tagged_at = null
+where tag_prompt_version is null
+   or tag_prompt_version != 'v2';  -- the new version
+```
+
+The backfill cron picks them up within 15 min and re-tags. Cost: same
+as the original backfill (~\$0.0001 per row).
+
+### Drafter / tagging cross-check (post-launch insight)
+
+Once both the drafter (Phase 3) and tagger (Phase 5) have data, you
+can correlate them — drafted comments tend to land on which kind of
+posts? Useful for validating the drafter's A/B lift hypothesis is
+specifically about engaging content vs. just shorter posts:
+
+```sql
+-- Comment volume by post tag, split by drafter usage
+select t.tag,
+       count(*) as comments,
+       count(*) filter (where c.draft_used) as drafted,
+       round(100.0 * count(*) filter (where c.draft_used) / nullif(count(*), 0), 1) as drafted_pct
+from public.community_comments c
+join public.community_posts p on p.id = c.post_id, unnest(p.tags) as t(tag)
+where c.created_at > now() - interval '14 days'
+  and p.tagged_at is not null
+group by 1
+order by comments desc;
+```
+
+If `drafted_pct` is wildly different across tags (e.g. 50% on
+`fan_question` posts but 5% on `tour_announcement`), that's a real
+signal — the drafter helps members engage with question-style posts
+more than announcement-style ones, which informs both the drafter
+prompt and the surfacing logic.
+
+---
+
 ## 📈 AI feature metrics — drafter A/B (Phase 3)
 
 Use these queries after the comment drafter has been live for a few
