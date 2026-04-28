@@ -1,6 +1,16 @@
 import Link from "next/link";
 import type { FanHomeData, FanHomeUpcomingEvent } from "@/lib/data/fan-home";
 
+// Per-artist focal-y override for the Following strip card photo.
+// Mirrors the map in app/artists/[slug]/page.tsx. Default 0% =
+// `object-top` (head visible for typical top-of-frame portraits).
+// Bump higher when the subject sits low in the source photo.
+const STRIP_FOCAL_Y_BY_SLUG: Record<string, number> = {
+  raelynn: 55,
+};
+const STRIP_DEFAULT_FOCAL_Y = 0;
+
+
 /**
  * Personalized Fan Home dashboard — everything a signed-in fan sees at /
  * above the existing marketing content. All data comes from getFanHomeData()
@@ -116,9 +126,14 @@ function FollowedArtistsStrip({
                   <img
                     src={a.hero_image}
                     alt=""
-                    // object-top keeps the subject's head visible — default
-                    // object-cover crops top + bottom equally, slicing heads.
-                    className="absolute inset-0 h-full w-full object-cover object-top transition duration-300 group-hover:scale-[1.04]"
+                    // Per-artist focal-y override (see STRIP_FOCAL_Y_BY_SLUG).
+                    // 0% = top-anchored (head visible for top-of-frame portraits).
+                    // Higher values shift the visible window down for photos
+                    // where the subject sits low in the frame.
+                    style={{
+                      objectPosition: `center ${STRIP_FOCAL_Y_BY_SLUG[a.slug] ?? STRIP_DEFAULT_FOCAL_Y}%`,
+                    }}
+                    className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-[1.04]"
                     aria-hidden
                   />
                 </>
