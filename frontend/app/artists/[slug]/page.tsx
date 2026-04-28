@@ -106,7 +106,7 @@ export default async function ArtistPage({
     <main className="mx-auto max-w-6xl space-y-10 px-6 py-12">
       {/* Hero */}
       <section
-        className="relative overflow-hidden rounded-3xl border border-white/10 p-10 min-h-[420px] md:min-h-[520px]"
+        className="relative flex flex-col justify-end overflow-hidden rounded-3xl border border-white/10 min-h-[420px] md:min-h-[520px]"
         style={!artist.heroImage ? { backgroundImage: heroGradient } : undefined}
       >
         {artist.heroImage && (
@@ -139,8 +139,10 @@ export default async function ArtistPage({
           </>
         )}
 
-        {/* Content layer — sits above image + overlay */}
-        <div className="relative">
+        {/* Content layer — sits above image + overlay, anchored to the bottom
+            via the section's flex flex-col justify-end so the photo dominates
+            the upper portion (faces stay clear of the CTA stack). */}
+        <div className="relative p-10">
           <p className="text-xs uppercase tracking-[0.3em] text-white/70">
             {artist.genres.join(" · ")}
           </p>
