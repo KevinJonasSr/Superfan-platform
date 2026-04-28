@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getAdminUser } from "@/lib/admin";
 import { indexRowAsync } from "@/lib/embeddings";
 import { moderateRowAsync } from "@/lib/moderation";
+import { tagRowAsync } from "@/lib/tagging";
 
 type Visibility = "public" | "premium" | "founder-only";
 
@@ -62,6 +63,7 @@ export async function createPostAction(formData: FormData) {
   // safety net if this path fails.
   if (created) indexRowAsync("community_posts", created.id);
   if (created) moderateRowAsync("community_posts", created.id);
+  if (created) tagRowAsync(created.id);
 
   revalidatePath(`/artists/${artistSlug}/community`);
   revalidatePath(`/artists/${artistSlug}`);
@@ -189,6 +191,7 @@ export async function createPollAction(formData: FormData) {
 
   indexRowAsync("community_posts", post.id);
   moderateRowAsync("community_posts", post.id);
+  tagRowAsync(post.id);
 
   await admin.from("community_poll_options").insert(
     options.map((label, i) => ({
@@ -253,6 +256,7 @@ export async function createChallengeAction(formData: FormData) {
 
   if (created) indexRowAsync("community_posts", created.id);
   if (created) moderateRowAsync("community_posts", created.id);
+  if (created) tagRowAsync(created.id);
 
   revalidatePath(`/artists/${artistSlug}/community`);
 }
@@ -316,6 +320,7 @@ export async function createAnnouncementAction(formData: FormData) {
 
   if (created) indexRowAsync("community_posts", created.id);
   if (created) moderateRowAsync("community_posts", created.id);
+  if (created) tagRowAsync(created.id);
 
   revalidatePath(`/artists/${artistSlug}/community`);
 }
