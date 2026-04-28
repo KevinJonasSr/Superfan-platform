@@ -7,6 +7,7 @@ import Footer from "@/components/footer";
 import InstallPrompt from "@/components/install-prompt";
 import PremiumBadge from "@/components/premium-badge";
 import AdminPill from "@/components/admin-pill";
+import SearchInput from "@/components/search-input";
 import UserMenu from "@/components/user-menu";
 import { createClient } from "@/lib/supabase/server";
 import { getUnreadCount } from "@/lib/data/notifications";
@@ -170,6 +171,9 @@ export default async function RootLayout({
                 </Link>
               ))}
             </nav>
+            <div className="hidden flex-1 max-w-xs lg:block">
+              <SearchInput compact placeholder="Search Fan Engage…" />
+            </div>
             {user ? (
               <div className="flex items-center gap-3">
                 <PremiumBadge

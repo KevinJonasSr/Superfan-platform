@@ -121,6 +121,16 @@ export default function UserMenu({ fan, isAdmin, unreadCount = 0 }: UserMenuProp
               My rewards
             </Link>
 
+            {/* Search */}
+            <Link
+              href="/search"
+              className="block px-4 py-2 text-sm text-white/80 hover:bg-white/10 transition"
+              role="menuitem"
+              onClick={() => setIsOpen(false)}
+            >
+              Search
+            </Link>
+
             {/* Inbox */}
             <Link
               href="/inbox"
