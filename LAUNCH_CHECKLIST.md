@@ -212,6 +212,76 @@ import ModerationButton from "@/app/admin/community/moderation-button";
 - [ ] **Fan Home Recent Activity expansion** — the data layer (`frontend/lib/data/fan-home.ts`) already pulls the 5 most recent community posts from followed artists, but the dashboard (`frontend/components/fan-home-dashboard.tsx` `<RecentActivityFeed>`) only renders the top 3. Two related upgrades worth picking up post-launch: (1) bump the visible count to 5 — trivial change to `posts.slice(0, 3)` — and/or raise the data layer's `.limit(8)` if we want a deeper feed; (2) add a "View all activity →" link at the bottom of the card that routes to a new per-fan activity index page (e.g. `/activity` or `/feed`) showing every recent post across followed artists, paginated, with body bodies and reactions. The index page would basically be a cross-artist version of `/artists/[slug]/community`. Estimated work: ~2 hours for the link + index page; ~5 minutes for the count bump on its own.
 - [ ] **Platform-wide badges architecture** — migration 0023 (`0023_fix_award_badge_delegate.sql`) shipped a tactical fix for the signup 42P10 by having `award_badge(uuid, text)` delegate to `award_community_badge(uuid, text, text)` with a hard-coded `community_id = 'raelynn'`. This works because every historical `fan_badges` row is already scoped to `'raelynn'` (the table's column default), but it's architecturally wrong: badges like `welcome`, `tier-bronze`, `recruiter`, `first-post`, `first-comment`, etc. are platform-wide achievements, not RaeLynn-specific ones. Two clean ways to fix it post-launch: (a) add a `'platform'` (or `'*'`) row to the `communities` table and use that as the default for non-scoped badges — minimal schema change, ~30 minutes including a backfill `update fan_badges set community_id = 'platform' where badge_slug in (...)`; or (b) split into separate `platform_badges` (one row per fan per badge) + `community_badges` (one row per fan per badge per community) tables — more correct data model but requires a migration that re-shards existing rows + updates every read path. Either way, also worth adding a `badges.scope` column with values `'platform' | 'community'` so the data layer can route awards to the right table/community without hard-coded slug lists. Tracker for the delegation hack: see migration 0023 header comment.
 
+## 📧 Mailchimp digest field length watch (Phase 4)
+
+After the first few weekly digest sends, monitor whether the
+`*|DIGESTHTML|*` merge field is being truncated by Mailchimp.
+Symptoms: emails arrive with HTML cut off mid-element (e.g. an open
+`<div>` with no closing tag, a link href that ends abruptly), or the
+"reward suggestion" / later community blocks missing entirely from
+fans who follow 3 active communities.
+
+**Why this might happen:** Mailchimp Standard plans cap custom text
+merge fields at 255 chars by default. The Phase 4 digest renders
+HTML in the 800-3,500 char range per fan — fits for fans with one
+sparse community, breaks for fans with 3 active communities + a
+reward block.
+
+**Watch query (run weekly):**
+
+```sql
+-- Distribution of HTML body lengths
+select width_bucket(length(html_body), 0, 6000, 6) as bucket,
+       count(*) as digests,
+       round(avg(length(html_body))) as avg_chars
+from public.digest_log
+where status in ('sent', 'merge_fields_updated')
+  and sent_at > now() - interval '14 days'
+group by 1 order by 1;
+
+-- Specific digests over Mailchimp's likely truncation point
+select fan_id, length(html_body), array_length(payload_communities, 1) as communities,
+       array_length(payload_post_ids, 1) as posts
+from public.digest_log
+where length(html_body) > 1500
+order by length(html_body) desc limit 20;
+```
+
+**If truncation is happening, three options ranked by impact / effort:**
+
+- [ ] **Option A — Upgrade Mailchimp plan** (lowest effort, fastest
+      fix). Standard tier may cap merge fields at 255-1000 chars
+      depending on grandfathered settings; Premium tier raises this.
+      Verify the actual limit on the Jonas Group account by trying
+      to bump the field length in the Mailchimp UI:
+      https://us16.admin.mailchimp.com/audience/merge-fields/?id=554139
+      → click `…` next to "Digest HTML Block" → Edit → look for a
+      "Max length" or character-limit field. If it's editable, just
+      raise it. If it's not editable, that's a plan-level cap and
+      upgrading is the path. ~$0-50/mo additional cost.
+- [ ] **Option B — Switch to Mandrill (Mailchimp Transactional)** —
+      separate Mailchimp product, ~$10/mo for 5k transactional
+      emails. Designed for per-recipient HTML; no merge-field length
+      cap. Refactor `frontend/lib/digest/send.ts` to call the
+      transactional API instead of the campaign API + merge-field
+      pattern. ~30 minutes of work, plus signup + API key in env.
+      The campaign template HTML in `send.ts` becomes the per-send
+      HTML; no campaign-level Mailchimp template needed.
+- [ ] **Option C — Split into multiple shorter merge fields** —
+      stay on Marketing API, decompose `DIGESTHTML` into ~10
+      smaller fields (`DG_VIBE_1`, `DG_POST_1A`, `DG_EVT_1A`, etc.)
+      and a richer template in Mailchimp. More code work (~2 hours),
+      no plan upgrade, but the template becomes rigid (every fan
+      needs the same shape; one missing community = empty section).
+      Save this for if A and B don't make sense.
+
+**Recommendation:** start with A — try editing the merge field's
+max length in the Mailchimp UI and see if Mailchimp lets you raise
+it. If yes, problem solved at zero cost. If no, B is the cleanest
+upgrade path.
+
+---
+
 ## 🤖 AI roadmap pause gate
 
 After Phase 4 (weekly digest emails), Fan Engage has four shipped AI
