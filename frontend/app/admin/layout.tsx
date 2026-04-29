@@ -7,6 +7,7 @@ import { countPendingRedemptions } from "@/lib/data/rewards";
 
 const adminNav = [
   { href: "/admin", label: "Overview" },
+  { href: "/admin/applications", label: "Applications" },
   { href: "/admin/artists", label: "Artists" },
   { href: "/admin/campaigns", label: "Campaigns" },
   { href: "/admin/analytics", label: "Analytics" },
