@@ -11,6 +11,7 @@ import { getCurrentFan } from "@/lib/data/fan";
 import { canAccess, getViewerEntitlement } from "@/lib/entitlements";
 import { createAdminClient } from "@/lib/supabase/admin";
 import PremiumPaywall from "@/components/premium-paywall";
+import SocialIcon from "@/components/social-icon";
 import FollowButton from "./follow-button";
 import RsvpButton from "./rsvp-button";
 
@@ -229,19 +230,15 @@ export default async function ArtistPage({
         </div>
         <div className="glass-card p-8">
           <p className="text-sm uppercase tracking-wide text-white/60">Follow</p>
-          <ul className="mt-4 space-y-2 text-sm text-white/70">
+          <div className="mt-4 flex flex-wrap gap-3">
             {artist.social.length === 0 ? (
-              <li className="text-white/40">Social links pending.</li>
+              <p className="text-xs text-white/40">Social links pending.</p>
             ) : (
               artist.social.map((s) => (
-                <li key={s.label}>
-                  <a href={s.href} className="hover:text-white" rel="noreferrer" target="_blank">
-                    {s.label} →
-                  </a>
-                </li>
+                <SocialIcon key={s.label} label={s.label} href={s.href} />
               ))
             )}
-          </ul>
+          </div>
         </div>
       </section>
 
