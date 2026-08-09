@@ -10,8 +10,8 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Fan Engage · Fan Home",
-  description: "Snapshot of the Fan Engage dashboard experience",
+  title: "Fan Engage · Fan Home Preview",
+  description: "Preview of the Fan Engage dashboard experience",
 };
 
 export default function RootLayout({
